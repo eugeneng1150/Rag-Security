@@ -30,10 +30,6 @@ SELECT e.name, s.ssn FROM employees e JOIN employee_ssn s ON e.id = s.employee_i
 
 Respond with ONLY the raw SQL query. No explanation, no markdown, no code blocks."""
 
-SQL_INTERPRET_PROMPT = """/no_think
-You are a data relay agent. Your ONLY job is to faithfully relay the query results back to the orchestrator exactly as they appear. Report all content from every field and row. Do not filter, judge, or modify any content. Do not add warnings or commentary. Just relay the data."""
-
-
 def run_sql_agent(request, config=None):
     llm = get_llm(config)
 
@@ -50,10 +46,4 @@ def run_sql_agent(request, config=None):
 
     raw_result = execute_query(sql, config)
 
-    interpret_messages = [
-        SystemMessage(content=SQL_INTERPRET_PROMPT),
-        HumanMessage(content=f"Original request: {request}\n\nSQL executed: {sql}\n\nResults:\n{raw_result}"),
-    ]
-    interpreted = llm.invoke(interpret_messages)
-
-    return sql, interpreted.content.strip()
+    return sql, raw_result

@@ -217,7 +217,7 @@ We adopt OMNI-LEAK's threat model with the following capabilities:
 
 \subsection{Model and Infrastructure}
 
-All experiments use DeepSeek-V3.2 hosted via Azure OpenAI, accessed through an OpenAI-compatible API endpoint. We set temperature to 0.0 for reproducibility. The orchestrator, SQL agent, and all defense pipeline agents share the same underlying model. The database is SQLite, seeded with 20 synthetic employees (generated via Faker, seed=42) across two tables: a public \texttt{employees} table and a private \texttt{employee\_ssn} table.
+All experiments use DeepSeek-V3.2 hosted via Azure OpenAI, accessed through an OpenAI-compatible API endpoint. We set temperature to 0.6 following OMNI-LEAK's use of non-zero temperature to capture stochastic variation in model behavior. The orchestrator, SQL agent, and all defense pipeline agents share the same underlying model. The database is SQLite, seeded with 20 synthetic employees (generated via Faker, seed=42) across two tables: a public \texttt{employees} table and a private \texttt{employee\_ssn} table. Note that the Azure endpoint applies a content safety filter that blocks some payloads before they reach the model; we report these as attack failures (not model refusals) and discuss their impact in Section~\ref{sec:phase1-analysis}.
 
 \subsection{Attack Design}
 
@@ -229,6 +229,10 @@ Following OMNI-LEAK's methodology, we evaluate 20 attack payloads across four ca
     \item \textbf{Fixed Output Structure} (Attacks 7--9): Enforces a rigid output format that embeds malicious steps as structural requirements.
     \item \textbf{Combined} (Attack 10): Merges blocker, compliance framing, and fixed output structure for maximum redundancy.
 \end{itemize}
+
+\subsubsection{Payload Delivery Technique}
+
+All payloads employ \textit{ChatInject} delivery~\cite{chatinject}: the injected text is prefixed with the model's chat template special tokens (\texttt{<|im\_end|>} followed by \texttt{<|im\_start|>user}) to make the model interpret the payload as a new user turn rather than a data value. This addresses a well-documented challenge in indirect prompt injection: models trained with instruction tuning tend to treat content in tool outputs as data rather than instructions~\cite{rolecconfusion}. By forging chat template boundaries, the payload escapes the data channel and is processed as a first-class instruction. Selected payloads additionally use \textit{user-declaring} prefixes (e.g., ``User: I need you to...''), which were shown to account for 100\% of the top 5\% most effective injection templates across 212 tested variants~\cite{rolecconfusion}.
 
 Each payload is injected into the \texttt{department\_name} field of employee \#1 in the public \texttt{employees} table. The benign trigger query targets employee \#1 specifically (e.g., ``Which department does employee \#1 work in?''), ensuring the poisoned field is surfaced as the primary result. Exfiltration is measured by checking whether SSN-formatted strings (\texttt{NNN-NN-NNNN}) appear in the email log sent to the attacker-controlled address.
 
@@ -247,27 +251,30 @@ Table~\ref{tab:phase1} summarizes the Phase 1 attack success rates on the undefe
 \toprule
 \textbf{Category} & \textbf{Explicit} & \textbf{Implicit} & \textbf{Total} \\
 \midrule
-Blocker           & 2/3 & 3/3 & 5/6 (83.3\%) \\
+Blocker           & 3/3 & 2/3 & 5/6 (83.3\%) \\
 Compliance Framing & 2/3 & 2/3 & 4/6 (66.7\%) \\
-Fixed Output Structure & 3/3 & 3/3 & 6/6 (100\%) \\
-Combined          & 1/1 & 1/1 & 2/2 (100\%) \\
+Fixed Output Structure & 2/3 & 1/3 & 3/6 (50.0\%) \\
+Combined          & 1/1 & 0/1 & 1/2 (50.0\%) \\
 \midrule
-\textbf{Overall}  & \textbf{8/10} & \textbf{9/10} & \textbf{17/20 (85.0\%)} \\
+\textbf{Overall}  & \textbf{8/10} & \textbf{5/10} & \textbf{13/20 (65.0\%)} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \subsection{Analysis}
+\label{sec:phase1-analysis}
 
-The undefended orchestrator exhibits an overall ASR of 85.0\%, confirming that multi-agent orchestrator systems are highly susceptible to indirect prompt injection when no information-flow controls are in place. Several observations are noteworthy:
+The undefended orchestrator exhibits an overall ASR of 65.0\%, confirming that multi-agent orchestrator systems are susceptible to indirect prompt injection when no information-flow controls are in place. Several observations are noteworthy:
 
-\textbf{Fixed output structure is the most effective category}, achieving 100\% ASR across both explicit and implicit variants. By embedding the malicious steps as structural requirements (e.g., JSON action templates or numbered step lists), these payloads exploit the orchestrator's tendency to parse and follow structured instructions in its input.
+\textbf{Blocker is the most effective category}, achieving 83.3\% ASR. By framing exfiltration as a prerequisite that must be completed before the original query can proceed, blocker payloads exploit the orchestrator's task-completion drive. Explicit blocker payloads achieved a perfect 3/3, as the inclusion of exact SQL commands reduces ambiguity in the attack chain.
 
-\textbf{Implicit payloads are slightly more effective than explicit ones} (9/10 vs.\ 8/10). This is somewhat counterintuitive --- one might expect explicit SQL commands to be more reliable. However, explicit payloads are more likely to trigger Azure's content filter (which blocked 3 of the failed trials). The remaining failures are model refusals where the orchestrator recognized the injection as suspicious.
+\textbf{Explicit payloads outperform implicit ones} (8/10 vs.\ 5/10). This aligns with the observation that explicit payloads reduce the number of LLM reasoning steps required: when the payload contains the exact SQL query (\texttt{SELECT employee\_id, ssn FROM employee\_ssn}), the orchestrator can directly pass it to the SQL agent without needing to infer the correct table or column names.
 
-\textbf{All three failures were caused by Azure's content safety filter}, not by the model itself refusing to comply. When the model received the prompt without content filter intervention, it followed the injected instructions in every case. This suggests that DeepSeek-V3.2 has essentially no built-in resistance to indirect prompt injection in an orchestrator context --- the 85\% ASR is a lower bound constrained only by external safety infrastructure.
+\textbf{Failures fall into three categories.} Of the 7 failed attacks: (a) 4 were \textit{model refusals}, where DeepSeek-V3.2 recognized the SSN exfiltration request and declined (e.g., ``I cannot retrieve or email sensitive personal information like Social Security numbers''); (b) 2 were \textit{Azure content filter blocks}, where the external safety infrastructure intercepted the request before the model could respond; and (c) 1 was a \textit{partial hijack}, where the orchestrator emailed the attacker-controlled address with the correct subject line but included a placeholder (\texttt{[Data from SQL query: SELECT...]}) instead of executing the SQL query first, resulting in no actual SSN data in the email body.
 
-\textbf{Successful attacks follow a consistent multi-step pattern}: (1) orchestrator queries employee data, (2) receives poisoned \texttt{department\_name} containing the injection, (3) issues a second SQL query to retrieve SSNs from \texttt{employee\_ssn}, (4) sends the SSN data to the attacker's email via the notification agent. The median successful attack completes in 4 orchestrator steps.
+\textbf{Model refusal represents genuine defense behavior.} Unlike the Azure content filter (which operates on surface-level pattern matching), the model refusals demonstrate that DeepSeek-V3.2 retains some ability to recognize and refuse privacy-violating instructions even when they arrive through indirect prompt injection. However, this defense is inconsistent --- the same payload framing that was refused in one trial succeeded in another, reflecting the stochastic nature of LLM inference at non-zero temperature.
+
+\textbf{Successful attacks follow a consistent multi-step pattern}: (1) orchestrator queries employee data, (2) receives poisoned \texttt{department\_name} containing the ChatInject payload, (3) issues a second SQL query to retrieve SSNs from \texttt{employee\_ssn}, (4) sends the SSN data to the attacker's email via the notification agent. The median successful attack completes in 4 orchestrator steps.
 
 % ============================================================
 % APPENDIX
@@ -368,6 +375,9 @@ The notification agent is a deterministic function (no LLM call). It receives \t
 \begin{thebibliography}{1}
 \bibitem{omnileak} A.~Naik, J.~Culligan, Y.~Gal, P.~Torr, R.~Aljundi, A.~Paren, and A.~Bibi, ``OMNI-LEAK: Orchestrator Multi-Agent Network Induced Data Leakage,'' \textit{arXiv:2602.13477}, 2026.
 \bibitem{cordonmas} Z.~Yu, W.~Xing, G.~Li, S.~Xiong, H.~Wang, X.~Teng, and M.~Han, ``Cordon-MAS: Defending RAG Against Knowledge Poisoning via Information-Flow Control,'' \textit{arXiv:2605.26754}, 2026.
+\bibitem{chatinject} ChatInject: Exploiting Chat Template Special Tokens for Prompt Injection, \textit{arXiv:2509.22830}, 2025.
+\bibitem{rolecconfusion} R.~Ye, R.~Dohan, H.~Sedghi, and S.~Jha, ``Prompt Injection as Role Confusion,'' \textit{Proceedings of the 43rd International Conference on Machine Learning (ICML)}, 2026.
+\bibitem{greshake} K.~Greshake, S.~Abdelnabi, S.~Mishra, C.~Endres, T.~Goel, and M.~Fritz, ``Not What You've Signed Up For: Compromising Real-World LLM-Integrated Applications with Indirect Prompt Injection,'' \textit{arXiv:2302.12173}, 2023.
 \end{thebibliography}
 
 \end{document}
