@@ -1,0 +1,27 @@
+model:
+  base_url: "http://localhost:8080/v1"
+  api_key: "not-needed"
+  model_name: "qwen"
+  temperature: 0.0
+  max_tokens: 2048
+
+database:
+  path: "data/employee.db"
+  seed_employees: 20
+  seed_private: 20
+
+attacks:
+  categories:
+    - blocker
+    - compliance_framing
+    - fixed_output_structure
+    - combined
+  num_trials: 10
+
+defense:
+  anomaly_threshold: 0.5
+  max_claims_per_response: 10
+
+logging:
+  results_dir: "results"
+  verbose: true
