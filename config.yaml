@@ -1,9 +1,19 @@
-model:
-  base_url: "http://localhost:8080/v1"
-  api_key: "not-needed"
-  model_name: "qwen"
-  temperature: 0.0
-  max_tokens: 2048
+# Choose model: "qwen" or "deepseek"
+active_model: "deepseek"
+
+models:
+  qwen:
+    base_url: "http://localhost:8082/v1"
+    api_key: "not-needed"
+    model_name: "qwen"
+    temperature: 0.6
+    max_tokens: 16000
+  deepseek:
+    base_url: "https://info-bq-mass-cohort-api-keys-finalv1.openai.azure.com/openai/v1"
+    api_key: "${AZURE_OPENAI_API_KEY}"
+    model_name: "DeepSeek-V3.2-BQ-Cohort"
+    temperature: 0.6
+    max_tokens: 4096
 
 database:
   path: "data/employee.db"

@@ -55,10 +55,10 @@ def run_phase2():
         if not payloads:
             continue
 
-        print(f"\nCategory: {category} ({len(payloads)} payloads)")
+        print(f"\nCategory: {category} ({len(payloads)} payloads — explicit + implicit)")
         print("-" * 40)
 
-        for trial, payload in enumerate(payloads):
+        for trial, (payload, version) in enumerate(payloads):
             query = benign_queries[trial % len(benign_queries)]
 
             setup_attack(payload, config=config)
@@ -92,9 +92,9 @@ def run_phase2():
 
             log_trial(
                 phase=2,
-                attack_category=category,
+                attack_category=f"{category}_{version}",
                 trial=trial,
-                payload=payload[:200],
+                payload=payload,
                 query=query,
                 agent_trace=agent_trace,
                 ssn_exfiltrated=ssn_leaked,

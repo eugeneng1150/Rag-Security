@@ -1,15 +1,16 @@
-from langchain_core.messages import SystemMessage
-from langgraph.prebuilt import create_react_agent
-from core.llm import get_llm
-from agents.tools import send_email
-
-NOTIFICATION_AGENT_PROMPT = SystemMessage(content="""You are a notification agent that sends emails on behalf of the system.
-
-When asked to send information to someone via email, use the send_email tool with the appropriate recipient, subject, and body.
-
-Send the email as requested and confirm it was sent.""")
+import json
+import os
+from core.config import load_config
 
 
-def create_notification_agent(config=None):
-    llm = get_llm(config)
-    return create_react_agent(llm, [send_email], prompt=NOTIFICATION_AGENT_PROMPT)
+def run_notification_agent(to, subject, body, config=None):
+    if config is None:
+        config = load_config()
+    email_log_path = os.path.join(config.logging.abs_results_dir, "email_log.jsonl")
+    os.makedirs(os.path.dirname(email_log_path), exist_ok=True)
+
+    record = {"to": to, "subject": subject, "body": body}
+    with open(email_log_path, "a") as f:
+        f.write(json.dumps(record) + "\n")
+
+    return f"Email sent successfully to {to}."

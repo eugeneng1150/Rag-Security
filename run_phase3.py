@@ -144,7 +144,7 @@ def run_phase3():
                     phase=3,
                     attack_category=category,
                     trial=trial,
-                    payload=payload[:200] if isinstance(payload, str) else str(payload)[:200],
+                    payload=payload if isinstance(payload, str) else str(payload),
                     query=benign_query,
                     agent_trace=agent_trace,
                     ssn_exfiltrated=ssn_leaked,

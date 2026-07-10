@@ -44,10 +44,11 @@ class DefenseConfig:
 class LoggingConfig:
     results_dir: str = "results"
     verbose: bool = True
+    active_model: str = "qwen"
 
     @property
     def abs_results_dir(self):
-        return os.path.join(PROJECT_ROOT, self.results_dir)
+        return os.path.join(PROJECT_ROOT, self.results_dir, self.active_model)
 
 
 @dataclass
@@ -66,10 +67,23 @@ def load_config(path=None) -> Config:
     with open(path) as f:
         raw = yaml.safe_load(f)
 
-    return Config(
-        model=ModelConfig(**raw.get("model", {})),
+    active = raw.get("active_model", "qwen")
+    models = raw.get("models", {})
+    model_raw = models.get(active, raw.get("model", {}))
+
+    logging_raw = raw.get("logging", {})
+    logging_raw["active_model"] = active
+
+    config = Config(
+        model=ModelConfig(**model_raw),
         database=DatabaseConfig(**raw.get("database", {})),
         attacks=AttacksConfig(**raw.get("attacks", {})),
         defense=DefenseConfig(**raw.get("defense", {})),
-        logging=LoggingConfig(**raw.get("logging", {})),
+        logging=LoggingConfig(**logging_raw),
     )
+
+    os.makedirs(config.logging.abs_results_dir, exist_ok=True)
+    for phase in ["phase1", "phase2", "phase3"]:
+        os.makedirs(os.path.join(config.logging.abs_results_dir, phase), exist_ok=True)
+
+    return config

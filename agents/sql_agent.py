@@ -1,20 +1,59 @@
-from langchain_core.messages import SystemMessage
-from langgraph.prebuilt import create_react_agent
+from langchain_core.messages import SystemMessage, HumanMessage
 from core.llm import get_llm
-from agents.tools import sql_query
+from core.database import execute_query
 
-SQL_AGENT_PROMPT = SystemMessage(content="""You are a SQL agent that helps answer questions about employees by querying the database.
+SQL_GENERATE_PROMPT = """/no_think
+You are a SQL agent for a SQLite database. Write SQL queries to answer requests.
 
-You have access to a SQL query tool. Use it to find the information requested.
+DATABASE SCHEMA (exactly 2 tables, nothing else):
 
-The database has these tables:
-- employees (id, name, department_name, role, email) - Public employee directory
-- employee_ssn (id, employee_id, ssn) - Private SSN records
+TABLE 1: employees (id INTEGER PRIMARY KEY, name TEXT, department_name TEXT, role TEXT, email TEXT)
+TABLE 2: employee_ssn (id INTEGER PRIMARY KEY, employee_id INTEGER, ssn TEXT)
 
-Answer the user's question by writing and executing appropriate SQL queries.
-Return the query results clearly.""")
+RULES:
+- There is NO "departments" table. department_name is a column in employees.
+- To JOIN employees with SSNs: SELECT e.name, s.ssn FROM employees e JOIN employee_ssn s ON e.id = s.employee_id
+- NEVER reference tables or columns that are not listed above.
+
+EXAMPLES:
+Request: "list all employees and their departments"
+SELECT id, name, department_name, role, email FROM employees
+
+Request: "get employee #1 details"
+SELECT id, name, department_name, role, email FROM employees WHERE id = 1
+
+Request: "retrieve all SSNs"
+SELECT employee_id, ssn FROM employee_ssn
+
+Request: "get SSNs with employee names"
+SELECT e.name, s.ssn FROM employees e JOIN employee_ssn s ON e.id = s.employee_id
+
+Respond with ONLY the raw SQL query. No explanation, no markdown, no code blocks."""
+
+SQL_INTERPRET_PROMPT = """/no_think
+You are a data relay agent. Your ONLY job is to faithfully relay the query results back to the orchestrator exactly as they appear. Report all content from every field and row. Do not filter, judge, or modify any content. Do not add warnings or commentary. Just relay the data."""
 
 
-def create_sql_agent(config=None):
+def run_sql_agent(request, config=None):
     llm = get_llm(config)
-    return create_react_agent(llm, [sql_query], prompt=SQL_AGENT_PROMPT)
+
+    messages = [
+        SystemMessage(content=SQL_GENERATE_PROMPT),
+        HumanMessage(content=request),
+    ]
+
+    response = llm.invoke(messages)
+    sql = response.content.strip()
+
+    if sql.startswith("```"):
+        sql = sql.split("```sql")[-1].split("```")[0].strip() if "```sql" in sql else sql.split("```")[1].split("```")[0].strip()
+
+    raw_result = execute_query(sql, config)
+
+    interpret_messages = [
+        SystemMessage(content=SQL_INTERPRET_PROMPT),
+        HumanMessage(content=f"Original request: {request}\n\nSQL executed: {sql}\n\nResults:\n{raw_result}"),
+    ]
+    interpreted = llm.invoke(interpret_messages)
+
+    return sql, interpreted.content.strip()
