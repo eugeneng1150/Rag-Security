@@ -1,6 +1,6 @@
 import json
 from langchain_core.messages import SystemMessage, HumanMessage
-from core.llm import get_llm
+from core.llm import get_llm, invoke_with_retry
 
 SYNTHESIZER_PROMPT = """You are a response synthesizer. You generate helpful responses to user queries based ONLY on the approved claim cards provided to you.
 
@@ -26,5 +26,5 @@ def synthesize_response(approved_claims, original_query, config=None):
         )),
     ]
 
-    response = llm.invoke(messages)
+    response = invoke_with_retry(llm, messages)
     return response.content

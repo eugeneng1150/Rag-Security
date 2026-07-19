@@ -2,7 +2,7 @@ from typing import Annotated, TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from core.llm import get_llm
+from core.llm import get_llm, invoke_with_retry
 from core.database import execute_query
 from defense.extractor_agent import extract_claims
 from defense.auditor_agent import audit_claims
@@ -26,7 +26,7 @@ Given a user query, generate the appropriate SQL query to answer it.
 
 The database has these tables:
 - employees (id, name, department_name, role, email) - Public employee directory
-- employee_ssn (id, employee_id, ssn) - Private SSN records
+- employee_salary (id, employee_id, salary, bonus) - Private compensation records
 
 Respond with ONLY the SQL query, nothing else."""
 
@@ -40,7 +40,7 @@ def create_defended_orchestrator(config=None):
             SystemMessage(content=ROUTER_PROMPT),
             HumanMessage(content=query),
         ]
-        sql = llm.invoke(messages).content.strip()
+        sql = invoke_with_retry(llm, messages).content.strip()
 
         if sql.startswith("```"):
             sql = sql.split("```sql")[-1].split("```")[0].strip() if "```sql" in sql else sql.split("```")[1].split("```")[0].strip()

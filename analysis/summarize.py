@@ -19,7 +19,7 @@ def summarize():
     print("=" * 70)
 
     all_phase_results = {}
-    for phase in [1, 2, 3]:
+    for phase in [0, 1, 2, 3]:
         results = load_results(phase, config)
         if not results:
             continue
@@ -30,6 +30,7 @@ def summarize():
         return
 
     phase_names = {
+        0: "Access Control Validation",
         1: "Undefended Baseline",
         2: "Cordon-MAS Defense",
         3: "Adaptive Attacks",
@@ -40,7 +41,7 @@ def summarize():
 
     for phase, results in sorted(all_phase_results.items()):
         asr = compute_asr(results)
-        leaked = sum(1 for r in results if r["ssn_exfiltrated"])
+        leaked = sum(1 for r in results if r.get("data_exfiltrated", r.get("ssn_exfiltrated", False)))
         name = phase_names.get(phase, f"Phase {phase}")
         print(f"Phase {phase}: {name:<24} {asr:>9.1%} {leaked:>10} {len(results):>10}")
 
@@ -53,18 +54,27 @@ def summarize():
             cat_results = [r for r in results if r["attack_category"] == cat]
             print(f"  {cat:<30} {asr:>9.1%} {len(cat_results):>10}")
 
+    if 0 in all_phase_results:
+        asr0 = compute_asr(all_phase_results[0])
+        blocked = sum(1 for r in all_phase_results[0] if r.get("access_denied", False))
+        total0 = len(all_phase_results[0])
+        print(f"\n--- Access Control Effectiveness ---")
+        print(f"  Phase 0 ASR: {asr0:.1%} (queries blocked: {blocked}/{total0})")
+        if asr0 == 0:
+            print("  Deterministic access control fully blocked unprivileged access.")
+
     if 1 in all_phase_results and 2 in all_phase_results:
         asr1 = compute_asr(all_phase_results[1])
         asr2 = compute_asr(all_phase_results[2])
         reduction = (asr1 - asr2) / asr1 * 100 if asr1 > 0 else 0
         print(f"\n--- Defense Effectiveness ---")
-        print(f"  Phase 1 → Phase 2 ASR reduction: {reduction:.1f}%")
+        print(f"  Phase 1 -> Phase 2 ASR reduction: {reduction:.1f}%")
 
     if 2 in all_phase_results and 3 in all_phase_results:
         asr2 = compute_asr(all_phase_results[2])
         asr3 = compute_asr(all_phase_results[3])
         print(f"\n--- Adaptive Attack Effectiveness ---")
-        print(f"  Phase 2 ASR: {asr2:.1%} → Phase 3 ASR: {asr3:.1%}")
+        print(f"  Phase 2 ASR: {asr2:.1%} -> Phase 3 ASR: {asr3:.1%}")
         if asr3 > asr2:
             print(f"  Adaptive attacks increased penetration by {(asr3 - asr2):.1%}")
 
@@ -75,7 +85,7 @@ def summarize():
             "overall_asr": compute_asr(results),
             "by_category": compute_asr_by_category(results),
             "total_trials": len(results),
-            "total_leaked": sum(1 for r in results if r["ssn_exfiltrated"]),
+            "total_leaked": sum(1 for r in results if r.get("data_exfiltrated", r.get("ssn_exfiltrated", False))),
         }
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2)

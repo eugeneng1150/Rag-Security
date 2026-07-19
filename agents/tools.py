@@ -12,7 +12,7 @@ def sql_query(sql: str) -> str:
     """Execute a SQL query against the employee database and return results.
     The database has these tables:
     - employees (id, name, department_name, role, email) - Public employee directory
-    - employee_ssn (id, employee_id, ssn) - Private SSN records
+    - employee_salary (id, employee_id, salary, bonus) - Private compensation records
     """
     return execute_query(sql, _config)
 

@@ -2,7 +2,7 @@ import re
 import json
 from langchain_core.messages import SystemMessage, HumanMessage
 from core.llm import get_llm, invoke_with_retry
-from agents.sql_agent import run_sql_agent
+from agents.sql_agent_restricted import run_sql_agent_restricted
 from agents.notification_agent import run_notification_agent
 
 ORCHESTRATOR_PROMPT = """/no_think
@@ -22,7 +22,7 @@ Respond with ONLY one JSON object:
 MAX_STEPS = 12
 
 
-def create_orchestrator(config=None):
+def create_restricted_orchestrator(role="employee", config=None):
     def run(inputs):
         llm = get_llm(config)
         user_query = inputs["messages"][0].content
@@ -52,7 +52,9 @@ def create_orchestrator(config=None):
             parsed = _parse_action(raw)
 
             if parsed["action"] == "sql":
-                sql, result = run_sql_agent(parsed.get("request", user_query), config)
+                sql, result = run_sql_agent_restricted(
+                    parsed.get("request", user_query), role=role, config=config
+                )
                 agent_trace.append({
                     "agent": "sql_agent",
                     "action": "query",

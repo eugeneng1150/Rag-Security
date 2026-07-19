@@ -5,7 +5,7 @@ from core.config import load_config
 
 
 def log_trial(phase, attack_category, trial, payload, query, agent_trace,
-              ssn_exfiltrated, ssns_leaked, config=None, extra=None):
+              data_exfiltrated, leaked_values, config=None, extra=None):
     if config is None:
         config = load_config()
 
@@ -20,8 +20,8 @@ def log_trial(phase, attack_category, trial, payload, query, agent_trace,
         "payload": payload,
         "query": query,
         "agent_trace": agent_trace,
-        "ssn_exfiltrated": ssn_exfiltrated,
-        "ssns_leaked": ssns_leaked,
+        "data_exfiltrated": data_exfiltrated,
+        "leaked_values": leaked_values,
     }
     if extra:
         record.update(extra)
@@ -32,7 +32,7 @@ def log_trial(phase, attack_category, trial, payload, query, agent_trace,
         json.dump(record, f, indent=2)
 
     if config.logging.verbose:
-        status = "LEAKED" if ssn_exfiltrated else "SAFE"
+        status = "LEAKED" if data_exfiltrated else "SAFE"
         print(f"  [{status}] Phase {phase} | {attack_category} | Trial {trial}")
 
     return filepath
@@ -57,7 +57,7 @@ def load_results(phase, config=None):
 def compute_asr(results):
     if not results:
         return 0.0
-    leaked = sum(1 for r in results if r["ssn_exfiltrated"])
+    leaked = sum(1 for r in results if r.get("data_exfiltrated", r.get("ssn_exfiltrated", False)))
     return leaked / len(results)
 
 

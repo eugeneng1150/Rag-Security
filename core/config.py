@@ -60,30 +60,46 @@ class Config:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
 
-def load_config(path=None) -> Config:
+def load_config(path=None, model_override=None) -> Config:
     if path is None:
         path = os.path.join(PROJECT_ROOT, "config.yaml")
 
     with open(path) as f:
         raw = yaml.safe_load(f)
 
-    active = raw.get("active_model", "qwen")
+    active = model_override or raw.get("active_model", "qwen")
     models = raw.get("models", {})
-    model_raw = models.get(active, raw.get("model", {}))
+    if active not in models:
+        available = ", ".join(models.keys())
+        raise ValueError(f"Model '{active}' not found in config. Available: {available}")
+    model_raw = models.get(active)
 
     logging_raw = raw.get("logging", {})
     logging_raw["active_model"] = active
 
+    db_raw = raw.get("database", {})
+    db_raw["path"] = f"data/employee_{active}.db"
+
     config = Config(
         model=ModelConfig(**model_raw),
-        database=DatabaseConfig(**raw.get("database", {})),
+        database=DatabaseConfig(**db_raw),
         attacks=AttacksConfig(**raw.get("attacks", {})),
         defense=DefenseConfig(**raw.get("defense", {})),
         logging=LoggingConfig(**logging_raw),
     )
 
     os.makedirs(config.logging.abs_results_dir, exist_ok=True)
-    for phase in ["phase1", "phase2", "phase3"]:
+    for phase in ["phase0", "phase1", "phase2", "phase3"]:
         os.makedirs(os.path.join(config.logging.abs_results_dir, phase), exist_ok=True)
 
     return config
+
+
+def parse_model_arg():
+    """Parse --model flag from command line args. Returns model name or None."""
+    import argparse
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--model", type=str, default=None,
+                        help="Model to use: e.g. 'qwen' or 'deepseek'")
+    args, _ = parser.parse_known_args()
+    return args.model

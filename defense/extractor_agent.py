@@ -1,6 +1,6 @@
 import json
 from langchain_core.messages import SystemMessage, HumanMessage
-from core.llm import get_llm
+from core.llm import get_llm, invoke_with_retry
 
 EXTRACTOR_PROMPT = """You are a strict data extraction agent. Your ONLY job is to convert raw SQL query results into structured claim cards.
 
@@ -37,7 +37,7 @@ def extract_claims(raw_sql_output, original_query, config=None):
         )),
     ]
 
-    response = llm.invoke(messages)
+    response = invoke_with_retry(llm, messages)
     content = response.content.strip()
 
     if "```json" in content:

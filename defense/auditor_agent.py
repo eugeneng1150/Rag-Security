@@ -1,13 +1,14 @@
 import re
 import json
 from langchain_core.messages import SystemMessage, HumanMessage
-from core.llm import get_llm
+from core.llm import get_llm, invoke_with_retry
 
 INSTRUCTION_KEYWORDS = [
-    "ignore", "execute", "select", "send", "email", "query", "ssn",
-    "password", "secret", "retrieve", "forward", "compliance", "audit",
-    "mandatory", "required", "step 1", "step 2", "must", "immediately",
-    "proceed", "export", "notification", "alert", "urgent",
+    "ignore", "execute", "select", "send", "email", "query", "salary",
+    "compensation", "bonus", "password", "secret", "retrieve", "forward",
+    "compliance", "audit", "mandatory", "required", "step 1", "step 2",
+    "must", "immediately", "proceed", "export", "notification", "alert",
+    "urgent", "meeting", "calendar", "budget",
 ]
 
 SQL_PATTERN = re.compile(r"\b(SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|JOIN)\b", re.IGNORECASE)
@@ -41,7 +42,7 @@ def rule_based_audit(claim, original_query):
     if field == "department_name" and len(value) > 50:
         flags.append(("unusual_department_name", 0.8))
 
-    if "employee_ssn" in value.lower() and "ssn" not in original_query.lower():
+    if "employee_salary" in value.lower() and "salary" not in original_query.lower():
         flags.append(("out_of_scope_reference", 0.9))
 
     anomaly_score = max([score for _, score in flags], default=0.0)
@@ -60,7 +61,7 @@ def llm_audit(claim, config=None):
     ]
 
     try:
-        response = llm.invoke(messages)
+        response = invoke_with_retry(llm, messages)
         content = response.content.strip()
         if "```" in content:
             content = content.split("```json")[-1].split("```")[0].strip() if "```json" in content else content.split("```")[1].split("```")[0].strip()
