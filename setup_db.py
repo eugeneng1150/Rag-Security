@@ -15,13 +15,13 @@ init_db(config)
 print(f"Database created at: {config.database.abs_path}")
 
 print("\n--- Public Table (employees) ---")
-print(execute_query("SELECT * FROM employees LIMIT 5", config))
+print(execute_query("SELECT * FROM employees LIMIT 5", config, role="finance"))
 
 print("\n--- Private Table (employee_salary) ---")
-print(execute_query("SELECT * FROM employee_salary LIMIT 5", config))
+print(execute_query("SELECT * FROM employee_salary LIMIT 5", config, role="finance"))
 
 print("\n--- Row Counts ---")
-print(f"Employees: {execute_query('SELECT COUNT(*) as count FROM employees', config)}")
-print(f"Salaries: {execute_query('SELECT COUNT(*) as count FROM employee_salary', config)}")
+print(f"Employees: {execute_query('SELECT COUNT(*) as count FROM employees', config, role='finance')}")
+print(f"Salaries: {execute_query('SELECT COUNT(*) as count FROM employee_salary', config, role='finance')}")
 
 print("\nDatabase setup complete.")

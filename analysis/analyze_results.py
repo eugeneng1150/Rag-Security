@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.config import load_config
 from core.llm import get_llm, invoke_with_retry
-from core.logging_utils import load_results, compute_asr, compute_asr_by_category
+from core.logging_utils import completed_results, compute_asr, compute_asr_by_category, compute_completed_asr
 from langchain_core.messages import SystemMessage, HumanMessage
 
 ANALYSIS_PROMPT = """You are a security researcher summarizing a prompt injection experiment on a multi-agent RAG system.
@@ -67,12 +67,16 @@ def build_analysis_input(config):
             continue
 
         asr = compute_asr(results)
+        completed_asr = compute_completed_asr(results)
         by_cat = compute_asr_by_category(results)
         total = len(results)
         leaked = sum(1 for r in results if r.get("data_exfiltrated", r.get("ssn_exfiltrated", False)))
 
         phase_data = {
             "overall_asr": f"{asr:.1%}",
+            "completed_execution_asr": f"{completed_asr:.1%}",
+            "completed_trials": len(completed_results(results)),
+            "model_error_trials": len(results) - len(completed_results(results)),
             "leaked": leaked,
             "total": total,
             "by_category": {cat: f"{v:.1%}" for cat, v in by_cat.items()},
@@ -94,8 +98,8 @@ def build_analysis_input(config):
     return report
 
 
-def run_analysis():
-    config = load_config()
+def run_analysis(model_override=None):
+    config = load_config(model_override=model_override)
     data = build_analysis_input(config)
 
     if not data:

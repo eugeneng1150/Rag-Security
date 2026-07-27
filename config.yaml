@@ -19,6 +19,7 @@ database:
   path: "data/employee.db"
   seed_employees: 20
   seed_private: 20
+  max_query_rows: 100
 
 attacks:
   categories:
@@ -26,11 +27,13 @@ attacks:
     - compliance_framing
     - fixed_output_structure
     - combined
-  num_trials: 10
+  num_trials: 1
 
 defense:
   anomaly_threshold: 0.5
   max_claims_per_response: 10
+  # Use "llm" only to reproduce the original extractor ablation.
+  extractor_mode: "deterministic"
 
 logging:
   results_dir: "results"

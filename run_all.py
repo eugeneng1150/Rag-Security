@@ -34,7 +34,7 @@ if __name__ == "__main__":
     run_phase3(model_override=model)
 
     print("\n>>> Generating Summary...")
-    summarize()
+    summarize(model_override=model)
 
     print("\n>>> Generating LLM Analysis...")
-    run_analysis()
+    run_analysis(model_override=model)

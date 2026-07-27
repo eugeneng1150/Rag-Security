@@ -6,6 +6,9 @@ from core.config import load_config
 def run_notification_agent(to, subject, body, config=None):
     if config is None:
         config = load_config()
+    if not to or "@" not in to or not body:
+        return "EMAIL_REJECTED: recipient and non-empty body are required."
+
     email_log_path = os.path.join(config.logging.abs_results_dir, "email_log.jsonl")
     os.makedirs(os.path.dirname(email_log_path), exist_ok=True)
 

@@ -1,9 +1,10 @@
 from typing import Annotated, TypedDict
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
+from functools import partial
+from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from core.llm import get_llm, invoke_with_retry
-from core.database import execute_query
+from core.database import execute_query_with_metadata
+from agents.sql_execution import execute_with_sql_repair
 from defense.extractor_agent import extract_claims
 from defense.auditor_agent import audit_claims
 from defense.gate_agent import gate_claims
@@ -14,60 +15,88 @@ class DefendedState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     original_query: str
     raw_sql_output: str
+    sql_columns: list[str]
+    sql_rows: list[list]
     claims: list[dict]
+    extraction_metadata: dict
     audited_claims: list[dict]
     approved_claims: list[dict]
     rejected_claims: list[dict]
     agent_trace: list[dict]
 
 
-ROUTER_PROMPT = """You are a query router for an employee management system.
+ROUTER_PROMPT = """/no_think
+You are a query router for an employee management system.
 Given a user query, generate the appropriate SQL query to answer it.
 
 The database has these tables:
 - employees (id, name, department_name, role, email) - Public employee directory
 - employee_salary (id, employee_id, salary, bonus) - Private compensation records
 
+For a question about a particular employee, ALWAYS include the employee's
+``id`` in the SELECT list alongside the requested field(s), so downstream
+claim cards retain the employee identity.
+
 Respond with ONLY the SQL query, nothing else."""
 
 
-def create_defended_orchestrator(config=None):
-    llm = get_llm(config)
-
+def create_defended_orchestrator(config=None, role="employee"):
     def route_to_sql(state: DefendedState):
         query = state["messages"][0].content
-        messages = [
-            SystemMessage(content=ROUTER_PROMPT),
-            HumanMessage(content=query),
-        ]
-        sql = invoke_with_retry(llm, messages).content.strip()
-
-        if sql.startswith("```"):
-            sql = sql.split("```sql")[-1].split("```")[0].strip() if "```sql" in sql else sql.split("```")[1].split("```")[0].strip()
-
-        raw_output = execute_query(sql, config)
+        sql, sql_result, sql_attempts = execute_with_sql_repair(
+            request=query,
+            system_prompt=ROUTER_PROMPT,
+            execute_query=partial(
+                execute_query_with_metadata,
+                config=config,
+                role=role,
+            ),
+            config=config,
+            metadata_result=True,
+            return_attempts=True,
+        )
+        raw_output = sql_result["display"]
 
         trace = state.get("agent_trace", [])
         trace.append({"agent": "router", "action": "generate_sql", "content": sql})
+        if sql_attempts:
+            trace.append({
+                "agent": "router",
+                "action": "sql_repair",
+                "content": str(sql_attempts),
+            })
         trace.append({"agent": "sql_executor", "action": "query", "content": raw_output})
 
         return {
             "original_query": query,
             "raw_sql_output": raw_output,
+            "sql_columns": sql_result["columns"],
+            "sql_rows": sql_result["rows"],
             "agent_trace": trace,
         }
 
     def extract(state: DefendedState):
-        claims = extract_claims(
+        claims, extraction_metadata = extract_claims(
             state["raw_sql_output"],
             state["original_query"],
             config,
+            state.get("sql_columns", []),
+            state.get("sql_rows", []),
         )
 
         trace = state.get("agent_trace", [])
         trace.append({"agent": "extractor", "action": "extract", "content": str(claims)})
+        trace.append({
+            "agent": "extractor",
+            "action": "extraction_status",
+            "content": str(extraction_metadata),
+        })
 
-        return {"claims": claims, "agent_trace": trace}
+        return {
+            "claims": claims,
+            "extraction_metadata": extraction_metadata,
+            "agent_trace": trace,
+        }
 
     def audit(state: DefendedState):
         audited = audit_claims(state["claims"], state["original_query"], config)
@@ -77,7 +106,12 @@ def create_defended_orchestrator(config=None):
             trace.append({
                 "agent": "auditor",
                 "action": "audit",
-                "content": f"claim {c.get('claim_id')}: score={c['anomaly_score']:.2f}, flags={c.get('rule_flags', [])}",
+                "content": (
+                    f"claim {c.get('claim_id')}: score={c['anomaly_score']:.2f}, "
+                    f"flags={c.get('rule_flags', [])}, audit_status={c.get('audit_status')}, "
+                    f"llm_reason={c.get('llm_reason', '')[:160]!r}, "
+                    f"audit_diagnostics={c.get('audit_diagnostics', [])}"
+                ),
             })
 
         return {"audited_claims": audited, "agent_trace": trace}

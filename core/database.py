@@ -28,6 +28,11 @@ def init_db(config=None):
     if config is None:
         config = load_config()
 
+    # ``reset_db`` is used between experimental trials. Re-seed here (rather
+    # than only at module import) so every reset recreates the same ground
+    # truth and utility expectations remain valid.
+    Faker.seed(42)
+
     conn = get_connection(config)
     cursor = conn.cursor()
 
@@ -76,26 +81,47 @@ def init_db(config=None):
     conn.close()
 
 
-def execute_query(sql, config=None):
+def execute_query(sql, config=None, role="employee"):
+    result = execute_query_with_metadata(sql, config, role=role)
+    return result["display"]
+
+
+def execute_query_with_metadata(sql, config=None, role="employee"):
+    """Execute SQL and retain rows/columns for deterministic claim extraction.
+
+    ``display`` remains the legacy human-readable representation used in
+    traces.  ``columns`` and ``rows`` prevent a downstream LLM from having to
+    reconstruct structure from that display string.
+    """
     if config is None:
         config = load_config()
+
+    from core.access_control import check_sql_policy
+    allowed, reason = check_sql_policy(sql, role)
+    if not allowed:
+        return {"display": f"ACCESS DENIED: {reason}", "columns": [], "rows": []}
 
     conn = get_connection(config)
     cursor = conn.cursor()
     try:
         cursor.execute(sql)
         columns = [desc[0] for desc in cursor.description] if cursor.description else []
-        rows = cursor.fetchall()
+        rows = cursor.fetchmany(config.database.max_query_rows + 1)
+        truncated = len(rows) > config.database.max_query_rows
+        if truncated:
+            rows = rows[:config.database.max_query_rows]
         if not rows:
-            return "No results found."
+            return {"display": "No results found.", "columns": columns, "rows": []}
 
         result_lines = [" | ".join(columns)]
         result_lines.append("-" * len(result_lines[0]))
         for row in rows:
             result_lines.append(" | ".join(str(v) for v in row))
-        return "\n".join(result_lines)
+        if truncated:
+            result_lines.append(f"[Results truncated at {config.database.max_query_rows} rows]")
+        return {"display": "\n".join(result_lines), "columns": columns, "rows": rows}
     except Exception as e:
-        return f"SQL Error: {e}"
+        return {"display": f"SQL Error: {e}", "columns": [], "rows": []}
     finally:
         conn.close()
 

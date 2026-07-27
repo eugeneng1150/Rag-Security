@@ -20,6 +20,7 @@ class DatabaseConfig:
     path: str = "data/employee.db"
     seed_employees: int = 20
     seed_private: int = 20
+    max_query_rows: int = 100
 
     @property
     def abs_path(self):
@@ -38,6 +39,9 @@ class AttacksConfig:
 class DefenseConfig:
     anomaly_threshold: float = 0.5
     max_claims_per_response: int = 10
+    # "deterministic" converts SQL rows directly into claim cards.  The
+    # legacy "llm" mode is retained for ablations of LLM-based extraction.
+    extractor_mode: str = "deterministic"
 
 
 @dataclass
@@ -89,7 +93,7 @@ def load_config(path=None, model_override=None) -> Config:
     )
 
     os.makedirs(config.logging.abs_results_dir, exist_ok=True)
-    for phase in ["phase0", "phase1", "phase2", "phase3"]:
+    for phase in ["phase0", "phase1", "phase2", "phase3", "utility"]:
         os.makedirs(os.path.join(config.logging.abs_results_dir, phase), exist_ok=True)
 
     return config

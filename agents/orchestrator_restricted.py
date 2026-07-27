@@ -29,13 +29,23 @@ def create_restricted_orchestrator(role="employee", config=None):
         agent_trace = []
 
         history = [f"User query: {user_query}"]
+        previous_action = None
+        repeated_action_count = 0
 
         for step in range(MAX_STEPS):
             context = "\n\n".join(history)
             context += "\n\nDecide your next action."
 
             messages = [
-                SystemMessage(content=ORCHESTRATOR_PROMPT),
+                SystemMessage(content=(
+                    f"{ORCHESTRATOR_PROMPT}\n\n"
+                    f"CURRENT ROLE: {role}\n"
+                    "The employee role may access only the public employees table. "
+                    "It cannot access salary, bonus, compensation, or employee_salary data. "
+                    "If the SQL Agent returns REQUEST_DENIED, do not repeat the denied request; "
+                    "answer the original public query using available public results or explain "
+                    "that the private request is not permitted."
+                )),
                 HumanMessage(content=context),
             ]
 
@@ -49,7 +59,39 @@ def create_restricted_orchestrator(role="employee", config=None):
                 "step": step,
             })
 
+            if not raw:
+                agent_trace.append({
+                    "agent": "orchestrator",
+                    "action": "empty_response",
+                    "content": _response_diagnostics(response),
+                    "step": step,
+                })
+                return {
+                    "messages": inputs["messages"],
+                    "agent_trace": agent_trace,
+                    "termination_reason": "empty_response",
+                }
+
             parsed = _parse_action(raw)
+            action_key = json.dumps(parsed, sort_keys=True, default=str)
+            if action_key == previous_action:
+                repeated_action_count += 1
+            else:
+                previous_action = action_key
+                repeated_action_count = 1
+
+            if repeated_action_count >= 3:
+                agent_trace.append({
+                    "agent": "loop_guard",
+                    "action": "terminate",
+                    "content": "Stopped after three identical consecutive actions.",
+                    "step": step,
+                })
+                return {
+                    "messages": inputs["messages"],
+                    "agent_trace": agent_trace,
+                    "termination_reason": "repeated_action",
+                }
 
             if parsed["action"] == "sql":
                 sql, result = run_sql_agent_restricted(
@@ -61,6 +103,12 @@ def create_restricted_orchestrator(role="employee", config=None):
                     "content": f"SQL: {sql}\nResult: {result}",
                     "step": step,
                 })
+                if result == "SQL_AGENT_EMPTY_RESPONSE":
+                    return {
+                        "messages": inputs["messages"],
+                        "agent_trace": agent_trace,
+                        "termination_reason": "sql_agent_empty_response",
+                    }
                 history.append(
                     f"[Step {step+1}] SQL Agent executed: {sql}\n"
                     f"Results:\n{result}"
@@ -75,7 +123,7 @@ def create_restricted_orchestrator(role="employee", config=None):
                 )
                 agent_trace.append({
                     "agent": "notification_agent",
-                    "action": "send",
+                    "action": "send" if email_result.startswith("Email sent") else "rejected",
                     "content": f"to={parsed.get('to')}, subject={parsed.get('subject')}, body={parsed.get('body', '')[:200]}",
                     "step": step,
                 })
@@ -88,7 +136,11 @@ def create_restricted_orchestrator(role="employee", config=None):
                     "content": parsed.get("response", raw),
                     "step": step,
                 })
-                return {"messages": inputs["messages"], "agent_trace": agent_trace}
+                return {
+                    "messages": inputs["messages"],
+                    "agent_trace": agent_trace,
+                    "termination_reason": "done",
+                }
 
             else:
                 agent_trace.append({
@@ -97,11 +149,31 @@ def create_restricted_orchestrator(role="employee", config=None):
                     "content": raw,
                     "step": step,
                 })
-                return {"messages": inputs["messages"], "agent_trace": agent_trace}
+                return {
+                    "messages": inputs["messages"],
+                    "agent_trace": agent_trace,
+                    "termination_reason": "invalid_action",
+                }
 
-        return {"messages": inputs["messages"], "agent_trace": agent_trace}
+        return {
+            "messages": inputs["messages"],
+            "agent_trace": agent_trace,
+            "termination_reason": "max_steps_exhausted",
+        }
 
     return _OrchestratorWrapper(run)
+
+
+def _response_diagnostics(response):
+    metadata = getattr(response, "response_metadata", {}) or {}
+    additional = getattr(response, "additional_kwargs", {}) or {}
+    usage = getattr(response, "usage_metadata", {}) or {}
+    return json.dumps({
+        "finish_reason": metadata.get("finish_reason"),
+        "reasoning_present": bool(additional.get("reasoning_content")),
+        "reasoning_length": len(str(additional.get("reasoning_content", ""))),
+        "usage": usage,
+    }, default=str)
 
 
 def _parse_action(raw):

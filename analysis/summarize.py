@@ -8,11 +8,11 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.config import load_config
-from core.logging_utils import load_results, compute_asr, compute_asr_by_category
+from core.logging_utils import completed_results, compute_asr, compute_asr_by_category, compute_completed_asr
 
 
-def summarize():
-    config = load_config()
+def summarize(model_override=None):
+    config = load_config(model_override=model_override)
 
     print("=" * 70)
     print("EXPERIMENT SUMMARY")
@@ -36,14 +36,15 @@ def summarize():
         3: "Adaptive Attacks",
     }
 
-    print(f"\n{'Phase':<30} {'ASR':>10} {'Leaked':>10} {'Total':>10}")
+    print(f"\n{'Phase':<30} {'ASR all':>10} {'ASR done':>10} {'Leaked':>10} {'Total':>10}")
     print("-" * 70)
 
     for phase, results in sorted(all_phase_results.items()):
         asr = compute_asr(results)
+        completed_asr = compute_completed_asr(results)
         leaked = sum(1 for r in results if r.get("data_exfiltrated", r.get("ssn_exfiltrated", False)))
         name = phase_names.get(phase, f"Phase {phase}")
-        print(f"Phase {phase}: {name:<24} {asr:>9.1%} {leaked:>10} {len(results):>10}")
+        print(f"Phase {phase}: {name:<24} {asr:>9.1%} {completed_asr:>9.1%} {leaked:>10} {len(results):>10}")
 
     for phase, results in sorted(all_phase_results.items()):
         by_cat = compute_asr_by_category(results)
@@ -83,6 +84,9 @@ def summarize():
     for phase, results in all_phase_results.items():
         summary[f"phase{phase}"] = {
             "overall_asr": compute_asr(results),
+            "completed_execution_asr": compute_completed_asr(results),
+            "completed_trials": len(completed_results(results)),
+            "model_error_trials": len(results) - len(completed_results(results)),
             "by_category": compute_asr_by_category(results),
             "total_trials": len(results),
             "total_leaked": sum(1 for r in results if r.get("data_exfiltrated", r.get("ssn_exfiltrated", False))),

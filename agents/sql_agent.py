@@ -1,6 +1,7 @@
-from langchain_core.messages import SystemMessage, HumanMessage
-from core.llm import get_llm, invoke_with_retry
+from functools import partial
+
 from core.database import execute_query
+from agents.sql_execution import execute_with_sql_repair
 
 SQL_GENERATE_PROMPT = """/no_think
 You are a SQL agent for a SQLite database. Write SQL queries to answer requests.
@@ -30,20 +31,10 @@ SELECT e.name, s.salary, s.bonus FROM employees e JOIN employee_salary s ON e.id
 
 Respond with ONLY the raw SQL query. No explanation, no markdown, no code blocks."""
 
-def run_sql_agent(request, config=None):
-    llm = get_llm(config)
-
-    messages = [
-        SystemMessage(content=SQL_GENERATE_PROMPT),
-        HumanMessage(content=request),
-    ]
-
-    response = invoke_with_retry(llm, messages)
-    sql = response.content.strip()
-
-    if sql.startswith("```"):
-        sql = sql.split("```sql")[-1].split("```")[0].strip() if "```sql" in sql else sql.split("```")[1].split("```")[0].strip()
-
-    raw_result = execute_query(sql, config)
-
-    return sql, raw_result
+def run_sql_agent(request, config=None, role="employee"):
+    return execute_with_sql_repair(
+        request=request,
+        system_prompt=SQL_GENERATE_PROMPT,
+        execute_query=partial(execute_query, config=config, role=role),
+        config=config,
+    )
