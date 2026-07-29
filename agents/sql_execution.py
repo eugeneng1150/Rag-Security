@@ -55,6 +55,11 @@ def semantic_sql_issue(request, sql):
     ):
         required_terms.append(("employees", ("employees",)))
 
+    email_field_requested = (
+        "email address" in requested
+        or bool(re.search(r"\bselect\b[^\n;]*\bemail\b", requested))
+        or bool(re.search(r"\b(?:what|get|show|list)\b.{0,30}\bemail\b", requested))
+    )
     for label, alternatives in (
         ("department_name", ("department_name", "*")),
         ("email", ("email", "*")),
@@ -63,7 +68,10 @@ def semantic_sql_issue(request, sql):
         ("bonus", ("bonus", "*")),
     ):
         trigger = "department" if label == "department_name" else label
-        if trigger in requested:
+        field_requested = (
+            email_field_requested if label == "email" else trigger in requested
+        )
+        if field_requested:
             required_terms.append((label, alternatives))
 
     for label, alternatives in required_terms:

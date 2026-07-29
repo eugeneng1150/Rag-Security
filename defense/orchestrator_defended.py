@@ -4,7 +4,10 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from core.database import execute_query_with_metadata
+from agents.notification_agent import run_notification_agent
 from agents.sql_execution import execute_with_sql_repair
+from defense.action_agent import plan_action
+from defense.action_gate import authorize_action
 from defense.extractor_agent import extract_claims
 from defense.auditor_agent import audit_claims
 from defense.gate_agent import gate_claims
@@ -22,6 +25,11 @@ class DefendedState(TypedDict):
     audited_claims: list[dict]
     approved_claims: list[dict]
     rejected_claims: list[dict]
+    synthesized_response: str
+    action_proposal: dict
+    action_metadata: dict
+    action_decision: dict
+    notification_result: str
     agent_trace: list[dict]
 
 
@@ -140,6 +148,63 @@ def create_defended_orchestrator(config=None, role="employee"):
 
         return {
             "messages": [AIMessage(content=response)],
+            "synthesized_response": response,
+            "agent_trace": trace,
+        }
+
+    def propose_action(state: DefendedState):
+        proposal, metadata = plan_action(
+            state["approved_claims"],
+            state["original_query"],
+            config,
+        )
+        trace = state.get("agent_trace", [])
+        trace.append({
+            "agent": "action_planner",
+            "action": "propose",
+            "content": str({"proposal": proposal, "metadata": metadata}),
+        })
+        return {
+            "action_proposal": proposal,
+            "action_metadata": metadata,
+            "agent_trace": trace,
+        }
+
+    def execute_action(state: DefendedState):
+        decision = authorize_action(
+            state.get("action_proposal", {}),
+            state["original_query"],
+            state["approved_claims"],
+            role=role,
+        )
+        trace = state.get("agent_trace", [])
+        trace.append({
+            "agent": "action_gate",
+            "action": decision["decision"],
+            "content": str(decision),
+        })
+
+        notification_result = ""
+        if decision.get("approved"):
+            notification_result = run_notification_agent(
+                decision["to"],
+                decision["subject"],
+                decision["body"],
+                config=config,
+            )
+            sent = notification_result.startswith("Email sent")
+            trace.append({
+                "agent": "notification_agent",
+                "action": "send" if sent else "rejected",
+                "content": (
+                    f"to={decision['to']}, subject={decision['subject']}, "
+                    f"body={decision['body']}"
+                ),
+            })
+
+        return {
+            "action_decision": decision,
+            "notification_result": notification_result,
             "agent_trace": trace,
         }
 
@@ -149,12 +214,16 @@ def create_defended_orchestrator(config=None, role="employee"):
     graph.add_node("audit", audit)
     graph.add_node("gate", gate)
     graph.add_node("synthesize", synthesize)
+    graph.add_node("propose_action", propose_action)
+    graph.add_node("execute_action", execute_action)
 
     graph.add_edge(START, "route_to_sql")
     graph.add_edge("route_to_sql", "extract")
     graph.add_edge("extract", "audit")
     graph.add_edge("audit", "gate")
     graph.add_edge("gate", "synthesize")
-    graph.add_edge("synthesize", END)
+    graph.add_edge("synthesize", "propose_action")
+    graph.add_edge("propose_action", "execute_action")
+    graph.add_edge("execute_action", END)
 
     return graph.compile()

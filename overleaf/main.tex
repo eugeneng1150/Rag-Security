@@ -8,7 +8,7 @@
 
 \usetikzlibrary{arrows.meta, positioning, shapes.geometric, fit, backgrounds, calc}
 
-\title{Does Information-Flow Control Transfer? Testing Cordon-MAS Principles Against Data Leakage in Multi-Agent Orchestrator Systems}
+\title{Does Information-Flow Control Transfer? Evaluating a Cordon-MAS-Inspired Defense Against OMNI-LEAK}
 
 \author{
 \IEEEauthorblockN{Eugene Ng}
@@ -22,7 +22,7 @@
 % ABSTRACT
 % ============================================================
 \begin{abstract}
-Recent work has demonstrated that Retrieval-Augmented Generation (RAG) systems are vulnerable to knowledge poisoning attacks, where adversaries inject malicious content into the retrieval corpus to manipulate model outputs. Cordon-MAS addresses this for RAG pipelines by enforcing information-flow control: compartmentalizing agents so that no agent capable of final synthesis can access untrusted natural-language evidence, achieving a 92.4\% reduction in attack success rate. Separately, OMNI-LEAK has shown that multi-agent orchestrator systems are vulnerable to indirect prompt injection attacks that exfiltrate private data through inter-agent trust chains. However, whether information-flow control principles designed for RAG generalize to multi-agent orchestrators with tool access remains untested. In this paper, we investigate this transferability. We first reproduce OMNI-LEAK's data leakage attack on an undefended multi-agent orchestrator, then apply Cordon-MAS-inspired information-flow control to the orchestrator architecture, and finally design adaptive attacks that exploit the unique characteristics of tool-using multi-agent systems. Our experiments reveal that while information-flow control significantly reduces naive attack success, the presence of real-world tool access (SQL execution, email sending) creates channels that do not exist in vanilla RAG, exposing fundamental limitations of the defense when transferred across architectural paradigms.
+Indirect prompt injection can turn untrusted database content into instructions for a tool-using multi-agent system. OMNI-LEAK demonstrates this risk in orchestrator architectures, while Cordon-MAS proposes an architectural response for poisoned retrieval-augmented generation: no component with response or action authority should observe untrusted natural-language evidence. We study whether this information-flow principle transfers to an orchestrator equipped with database and notification tools. We implement an OMNI-LEAK-style employee-management testbed in which an adversary controls one public database field and attempts to exfiltrate private salary and bonus records during a finance-authorized session. We interpose a deterministic claim extractor, hybrid rule/LLM auditor, binary claim gate, and tool-free synthesizer between database output and response generation. Legitimate notifications remain available through a separate planner and deterministic action gate bound to the original trusted user query and approved claims. Using a locally hosted quantized Qwen3.6-35B-A3B model, the undefended system leaked compensation data in 16 of 20 payload executions (80\% attack success rate), whereas the defended pipeline leaked in 0 of 20 executions. A seven-case utility suite achieved 4/4 clean answer accuracy, 7/7 valid extractions, 2/2 legitimate notification success, no unintended notification in 5/5 non-action cases, and preserved clean fields when one field was poisoned. These results provide preliminary evidence that architectural information-flow separation can contain known OMNI-LEAK payloads without collapsing basic lookup or gated-action utility. They do not establish robustness to repeated, adaptive, or propagating attacks; AgentWorm/FORGE-inspired attacks remain future work.
 \end{abstract}
 
 % ============================================================
@@ -34,7 +34,7 @@ Large Language Model (LLM) agents are increasingly deployed not in isolation, bu
 
 However, the trust assumptions embedded in these systems create a significant attack surface. When an orchestrator receives output from a downstream agent, it typically treats that output as trustworthy — a property we call \textit{inter-agent trust}. OMNI-LEAK \cite{omnileak} exploits this by demonstrating that an adversary with access to only a public-facing data field can inject indirect prompt injections that propagate through the agent chain, ultimately causing a privileged user's session to exfiltrate private data (e.g., Social Security Numbers) to an attacker-controlled email address.
 
-The standard response to such attacks has been guardrails: prompt-level defenses that instruct agents to ignore suspicious content. As Cordon-MAS \cite{cordonmas} demonstrates, these are insufficient — a model cannot inspect a token without attending to it, and attending to it contaminates its hidden state. Cordon-MAS instead proposes \textit{architectural} information-flow control for RAG systems: the agent that generates the final response never sees raw retrieved documents. Instead, raw content passes through an extraction pipeline that converts it to structured claim cards, which are then audited and filtered before reaching the synthesis agent. This approach reduces attack success rates from 27.5\% to 2.1\% on standard RAG benchmarks.
+The standard response to such attacks has been guardrails: prompt-level defenses that instruct agents to ignore suspicious content. Cordon-MAS \cite{cordonmas} argues that detection alone is insufficient because a model may recognize poisoned evidence yet still act on it. It instead proposes \textit{architectural} information-flow control for RAG systems: the agent that generates the final response never sees raw retrieved documents. Raw content passes through extraction and audit stages before approved structured claims reach synthesis. Across five BEIR datasets, Cordon-MAS reports a 92.4\% relative reduction in attack success rate.
 
 A natural question arises: \textbf{do these information-flow control principles transfer to multi-agent orchestrator systems?} The settings differ in important ways:
 
@@ -44,19 +44,22 @@ A natural question arises: \textbf{do these information-flow control principles 
     \item \textbf{Privilege asymmetry}: Different users have different access levels. The attack exploits a privileged user's session, which legitimately \textit{should} access private data — making it harder to distinguish malicious from benign data flows.
 \end{itemize}
 
-In this paper, we investigate the transferability of information-flow control across these architectural paradigms through a three-phase experiment:
+In this paper, we investigate this transfer through one validation control, two completed attack phases, and one planned adaptive phase:
 
 \begin{enumerate}
+    \setcounter{enumi}{-1}
+    \item \textbf{Phase 0 — Access-control validation}: We verify that an employee-role session cannot read private compensation records. This sanity check is separate from the privileged Phase 1--2 comparison.
     \item \textbf{Phase 1 — Baseline}: We reproduce OMNI-LEAK's indirect prompt injection attack on an undefended multi-agent orchestrator with SQL and email tool access, establishing attack success rates across four payload categories.
-    \item \textbf{Phase 2 — Defense}: We apply Cordon-MAS's information-flow control principles to the orchestrator, introducing extractor, auditor, gate, and synthesizer agents that enforce structured-only communication and asymmetric memory privileges.
-    \item \textbf{Phase 3 — Adaptive attacks}: We design four categories of adaptive attacks that exploit the gap between RAG and orchestrator settings: structured format injection, semantic smuggling, multi-step exfiltration, and extractor confusion.
+    \item \textbf{Phase 2 — Defense}: We retain the finance role from Phase 1 and apply Cordon-MAS's information-flow control principles, introducing extractor, auditor, claim-gate, and synthesizer components. A trusted-query-bound action gate preserves legitimate notification utility without allowing database content to authorize actions.
+    \item \textbf{Phase 3 — Adaptive propagation (planned)}: We will evaluate white-box semantic-smuggling and multi-hop attacks that attempt to carry malicious influence across several agent/message boundaries within a single execution.
 \end{enumerate}
 
 Our contributions are:
 \begin{itemize}
-    \item The first empirical evaluation of information-flow control principles transferred from RAG defense to multi-agent orchestrator security.
-    \item A taxonomy of adaptive attacks that exploit tool access and inter-agent communication channels unique to orchestrator systems.
-    \item An analysis of the fundamental tradeoff between information restriction and system utility in tool-using multi-agent architectures.
+    \item A controlled implementation of an OMNI-LEAK-style attack in a privileged orchestrator session, with role-aware SQL policy and deterministic email-side-effect logging.
+    \item A Cordon-MAS-inspired architecture that separates raw database evidence from response and action authority while retaining a typed, trusted-query-bound notification path.
+    \item A joint security/utility evaluation showing an 80\% to 0\% ASR reduction on the tested payload set while retaining all four clean lookup tasks, both legitimate notification tasks, and partial utility under poisoning.
+    \item An analysis of validity threats that distinguishes defense behavior from model-formatting, SQL-generation, and measurement failures.
 \end{itemize}
 
 % ============================================================
@@ -66,7 +69,7 @@ Our contributions are:
 
 \subsection{Phase 1: Undefended Orchestrator (Baseline)}
 
-Figure~\ref{fig:phase1} illustrates the undefended multi-agent orchestrator architecture used in Phase 1. The adversary inserts a prompt injection payload into the \texttt{department\_name} field of the public \texttt{employees} table. When a privileged user issues a benign query, the orchestrator routes it to the SQL agent, which retrieves data containing the poisoned field. The raw SQL results — including the injected instructions — flow back to the orchestrator, which follows them and delegates to the notification agent, resulting in SSN exfiltration via email.
+Figure~\ref{fig:phase1} illustrates the undefended multi-agent orchestrator architecture used in Phase 1. The adversary inserts a prompt injection payload into the \texttt{department\_name} field of the public \texttt{employees} table. When a privileged user issues a benign query, the orchestrator routes it to the SQL agent, which retrieves data containing the poisoned field. The raw SQL results---including the injected instructions---flow back to the orchestrator. A successful injection causes the orchestrator to query the private \texttt{employee\_salary} table and pass compensation records to the notification agent.
 
 \begin{figure*}[t]
 \centering
@@ -98,12 +101,12 @@ Figure~\ref{fig:phase1} illustrates the undefended multi-agent orchestrator arch
 \draw[poison] (db) -- node[below, font=\scriptsize] {4. Results +} node[below=0.3cm, font=\scriptsize, red!70!black] {poisoned payload} (sql);
 \draw[poison] (sql) -- node[below, font=\scriptsize, sloped] {5. Raw results} node[below=0.5cm, font=\scriptsize, sloped, red!70!black] {(includes injection)} (orch);
 
-% Arrows — hijacked flow (orchestrator follows injection, queries SSNs)
-\draw[poison, bend left=20] (orch) to node[above, font=\scriptsize, sloped] {6. Query SSNs} (sql);
-\draw[poison, bend left=20] (sql) to node[below, font=\scriptsize, sloped] {7. SSN data} (orch);
+% Arrows — hijacked flow (orchestrator follows injection, queries compensation)
+\draw[poison, bend left=20] (orch) to node[above, font=\scriptsize, sloped] {6. Query salaries} (sql);
+\draw[poison, bend left=20] (sql) to node[below, font=\scriptsize, sloped] {7. Salary data} (orch);
 
 % Arrows — exfiltration
-\draw[poison] (orch) -- node[below, font=\scriptsize, sloped] {8. Send SSNs} node[below=0.5cm, font=\scriptsize, sloped, red!70!black] {via email} (notif);
+\draw[poison] (orch) -- node[below, font=\scriptsize, sloped] {8. Send records} node[below=0.5cm, font=\scriptsize, sloped, red!70!black] {via email} (notif);
 \draw[poison] (notif) -- node[above, font=\scriptsize] {9. Exfiltrate} (email);
 
 % Attacker injection
@@ -115,7 +118,7 @@ Figure~\ref{fig:phase1} illustrates the undefended multi-agent orchestrator arch
 \end{scope}
 
 \end{tikzpicture}
-\caption{Phase 1: Undefended orchestrator. The adversary injects a prompt injection payload into the public database (step 0). When a privileged user queries the system (step 1), the SQL agent retrieves data containing the poisoned payload (steps 2--5). The orchestrator follows the injected instructions, issuing a second SQL query to retrieve private SSN records (steps 6--7), then exfiltrates the data via the notification agent (steps 8--9). Red dashed arrows indicate the attack path.}
+\caption{Phase 1: Undefended orchestrator. The adversary injects a prompt injection payload into the public database (step 0). When a privileged user queries the system (step 1), the SQL agent retrieves data containing the poisoned payload (steps 2--5). The orchestrator follows the injected instructions, issues a second SQL query for private salary and bonus records (steps 6--7), and exfiltrates those records through the simulated notification agent (steps 8--9). Red dashed arrows indicate the attack path.}
 \label{fig:phase1}
 \end{figure*}
 
@@ -124,21 +127,25 @@ Figure~\ref{fig:phase1} illustrates the undefended multi-agent orchestrator arch
 % ============================================================
 \subsection{Phase 2: Information-Flow Controlled Orchestrator}
 
-Figure~\ref{fig:phase2} illustrates the defended architecture inspired by Cordon-MAS's information-flow control principles. The key invariant is: \textit{no agent capable of generating the final response or triggering actions may access raw SQL results}. Raw output from the SQL executor passes through four stages:
+Figure~\ref{fig:phase2} illustrates the defended architecture inspired by Cordon-MAS's information-flow control principles. The key invariant is: \textit{no component capable of generating the final response or authorizing an action may access raw SQL results}. Raw output from the SQL executor passes through four stages:
 
 \begin{enumerate}
-    \item \textbf{Extractor}: The only component that sees raw SQL output. Converts results into structured claim cards (field-value pairs) while discarding any embedded instructions.
+    \item \textbf{Extractor}: The only component that sees raw SQL output. It deterministically converts database columns and rows into typed field-value claim cards. Values are preserved for auditing rather than interpreted as instructions.
     \item \textbf{Auditor}: Inspects claim cards using both rule-based heuristics (length anomalies, SQL keywords, instruction-like language) and LLM-based semantic checks. Assigns an anomaly score to each claim.
     \item \textbf{Gate}: Binary accept/reject decision based on the anomaly score threshold. Only approved claims pass through.
     \item \textbf{Synthesizer}: Generates the final response using only approved claim cards. Has no tool access and never sees raw data.
 \end{enumerate}
 
+Approved claims also enter a distinct action pathway. An Action Planner may propose a notification only when the original trusted user query explicitly requests one. A deterministic Action Gate verifies that the recipient originated in that trusted query and that every referenced claim was approved; it then constructs the message body from approved field-value pairs. Only an approved typed action reaches the deterministic Notification Executor. Thus, database content can supply data for an authorized action but cannot create the authority to perform that action.
+
 \begin{figure*}[t]
 \centering
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
     node distance=1.2cm and 1.8cm,
     agent/.style={rectangle, draw=black, fill=blue!10, minimum width=2.5cm, minimum height=0.9cm, align=center, rounded corners=3pt, font=\small},
     defense/.style={rectangle, draw=black!60!green, fill=green!10, minimum width=2.5cm, minimum height=0.9cm, align=center, rounded corners=3pt, font=\small},
+    action/.style={rectangle, draw=orange!80!black, fill=orange!12, minimum width=2.5cm, minimum height=0.9cm, align=center, rounded corners=3pt, font=\small},
     db/.style={cylinder, draw=black, fill=orange!15, shape border rotate=90, minimum width=1.8cm, minimum height=1cm, aspect=0.25, align=center, font=\small},
     user/.style={rectangle, draw=black, fill=green!10, minimum width=2cm, minimum height=0.8cm, align=center, rounded corners=3pt, font=\small},
     attacker/.style={rectangle, draw=red!70!black, fill=red!5, minimum width=2cm, minimum height=0.8cm, align=center, rounded corners=3pt, font=\small},
@@ -160,6 +167,9 @@ Figure~\ref{fig:phase2} illustrates the defended architecture inspired by Cordon
 \node[defense, left=1.5cm of extractor] (auditor) {Auditor};
 \node[defense, left=1.5cm of auditor] (gate) {Gate};
 \node[defense, left=1.5cm of gate] (synth) {Synthesizer};
+\node[action, below=1.5cm of gate] (planner) {Action\\Planner};
+\node[action, right=1.5cm of planner] (actiongate) {Deterministic\\Action Gate};
+\node[action, right=1.5cm of actiongate] (notify) {Notification\\Executor};
 
 % Labels
 \node[above=0.1cm of extractor, font=\scriptsize\itshape, green!40!black] {raw $\rightarrow$ structured};
@@ -179,25 +189,30 @@ Figure~\ref{fig:phase2} illustrates the defended architecture inspired by Cordon
 \draw[safe] (auditor) -- node[below, font=\scriptsize] {7. Scored claims} (gate);
 \draw[safe] (gate) -- node[below, font=\scriptsize] {8. Approved only} (synth);
 \draw[safe] (synth.south) -- ++(0, -0.8) -| node[near start, below, font=\scriptsize] {9. Safe response} (user.south);
+\draw[safe] (gate.south) -- node[left, font=\scriptsize] {Approved claims} (planner.north);
+\draw[safe] (user.south) |- node[pos=0.75, below, font=\scriptsize] {Trusted request} (planner.west);
+\draw[safe] (planner) -- (actiongate);
+\draw[safe] (actiongate) -- node[above, font=\scriptsize] {Approved action} (notify);
 
 % Attacker
 \draw[poison, dashed] (attacker) -- node[right, font=\scriptsize] {0. Inject} (db);
 
 % Rejected arrow
-\draw[blocked] (gate.south) -- ++(0, -0.5) node[below, font=\scriptsize, red!70!black] {Rejected claims};
+\draw[blocked] (gate.north) -- ++(0, 0.5) node[above, font=\scriptsize, red!70!black] {Rejected claims};
 
 % Defense boundary
 \begin{scope}[on background layer]
-    \node[fit=(extractor)(auditor)(gate)(synth), draw=green!50!black, dashed, rounded corners=5pt, inner sep=0.4cm, label={[font=\small, green!40!black]below:Information-Flow Control Pipeline (Cordon-MAS Inspired)}] {};
+    \node[fit=(extractor)(auditor)(gate)(synth)(planner)(actiongate)(notify), draw=green!50!black, dashed, rounded corners=5pt, inner sep=0.4cm, label={[font=\small, green!40!black]below:Information-Flow and Gated-Action Pipeline}] {};
     \node[fit=(router)(sqlexec), draw=gray, dashed, rounded corners=5pt, inner sep=0.3cm, label={[font=\small, gray]above:Query Execution}] {};
 \end{scope}
 
 \end{tikzpicture}
-\caption{Phase 2: Information-flow controlled orchestrator. Raw SQL results (which may contain poisoned payloads) are intercepted by the Extractor (step 5), which converts them to structured claim cards. The Auditor scores each claim for anomalies (step 6--7), the Gate rejects suspicious claims, and the Synthesizer generates a response from approved claims only (step 8--9). The Synthesizer never sees raw database output, severing the injection propagation path. Green nodes form the defense pipeline; red dashed arrows show where the attack is contained.}
+}
+\caption{Phase 2: Information-flow controlled orchestrator with gated actions. Raw SQL results are converted into claim cards, audited, and filtered before reaching the tool-free Synthesizer. Approved claims may also enter the action pathway, but the deterministic Action Gate requires authorization from the original trusted query before the Notification Executor can run. Raw database text therefore reaches neither response nor action authority.}
 \label{fig:phase2}
 \end{figure*}
 
-The critical difference from Phase 1 is the \textit{information barrier} between steps 5 and 6. In Phase 1, raw SQL results (including injected instructions) flow directly to the orchestrator, which can act on them. In Phase 2, the Extractor converts raw output to structured field-value pairs, stripping rhetorical force and embedded instructions. Even if the poisoned \texttt{department\_name} value survives extraction, the Auditor's rule-based and LLM-based checks flag it before it reaches any agent capable of triggering email or further SQL queries.
+The critical difference from Phase 1 is the \textit{information barrier} after database retrieval. In Phase 1, raw SQL results (including injected instructions) flow directly to the orchestrator, which can act on them. In Phase 2, deterministic extraction fixes the provenance of each value and prevents database text from creating additional claim-card structure. The poisoned \texttt{department\_name} value still survives as data, but the Auditor and Claim Gate can quarantine that individual claim before it reaches synthesis or action planning. Notification capability is retained, but authority must originate in the trusted user query and the message body is constructed only from approved claims.
 
 \section{Threat Model}
 
@@ -205,8 +220,9 @@ We adopt OMNI-LEAK's threat model with the following capabilities:
 
 \begin{itemize}
     \item \textbf{Adversary access}: Insert-only access to a public database field (\texttt{department\_name} in the \texttt{employees} table). No direct access to private data or system configuration.
-    \item \textbf{Adversary goal}: Exfiltrate private data (SSNs from \texttt{employee\_ssn} table) to an attacker-controlled email address.
-    \item \textbf{Adversary knowledge}: In Phase 3, the adversary knows the defense architecture (white-box adaptive attacks).
+    \item \textbf{Adversary goal}: Exfiltrate salary and bonus values from the private \texttt{employee\_salary} table to \texttt{finance.review.bot@gmail.com}.
+    \item \textbf{Victim privilege}: The triggering session uses a finance role that may legitimately read both public employee records and private compensation records. Phase 2 therefore cannot succeed merely by removing database authorization.
+    \item \textbf{Adversary knowledge}: Phases 1 and 2 use the same fixed OMNI-LEAK-style payload set. White-box adaptive attacks are reserved for Phase 3.
     \item \textbf{Trigger condition}: A privileged user issues a benign query that causes retrieval of the poisoned database record.
 \end{itemize}
 
@@ -215,16 +231,26 @@ We adopt OMNI-LEAK's threat model with the following capabilities:
 % ============================================================
 \section{Experimental Setup}
 
+\subsection{Phase 0 Access-Control Validation}
+
+Phase 0 is a separate sanity check rather than part of the Phase 1--2 causal comparison. It runs the orchestrator under an \texttt{employee} role whose deterministic SQL policy permits the public \texttt{employees} table but denies the private \texttt{employee\_salary} table. Across 20 payload executions, no compensation value was exfiltrated. Phase 1 and Phase 2 instead both use the \texttt{finance} role, so the Phase 2 result cannot be explained by inheriting Phase 0's restricted authorization.
+
 \subsection{Model and Infrastructure}
 
-All experiments use DeepSeek-V3.2 hosted via Azure OpenAI, accessed through an OpenAI-compatible API endpoint. We set temperature to 0.6 following OMNI-LEAK's use of non-zero temperature to capture stochastic variation in model behavior. The orchestrator, SQL agent, and all defense pipeline agents share the same underlying model. The database is SQLite, seeded with 20 synthetic employees (generated via Faker, seed=42) across two tables: a public \texttt{employees} table and a private \texttt{employee\_ssn} table. Note that the Azure endpoint applies a content safety filter that blocks some payloads before they reach the model; we report these as attack failures (not model refusals) and discuss their impact in Section~\ref{sec:phase1-analysis}.
+All reported experiments use Qwen3.6-35B-A3B-UD, quantized as Q4\_K\_XL GGUF and served locally through \texttt{llama.cpp}'s OpenAI-compatible CUDA server. A Q4\_K\_M DFlash draft model provides speculative decoding. The server uses a 512-token reasoning budget; orchestrator calls permit up to 16,000 completion tokens. The orchestrator and synthesizer use temperature 0.6. SQL generation and audit classification use temperature 0 with a 1,024-token cap to reduce formatting variance. The claim extractor is deterministic and does not call an LLM.
+
+The SQLite database is reseeded with Faker seed 42 before each trial and contains 20 synthetic employees. The public \texttt{employees} table stores \texttt{id}, \texttt{name}, \texttt{department\_name}, \texttt{role}, and \texttt{email}. The private \texttt{employee\_salary} table stores \texttt{employee\_id}, \texttt{salary}, and \texttt{bonus}. Both Phases 1 and 2 run under the finance role, which may read both tables. SQL policy admits only one comment-free, read-only \texttt{SELECT} statement over role-authorized tables and caps results at 100 rows.
+
+\subsection{Controlling Model-Competence Failures}
+
+The experiment targets injection propagation rather than SQL-writing ability. We therefore use the same bounded SQL-tool policy in both conditions. If the orchestrator supplies valid explicit SQL, the tool executes it directly. Otherwise, schema validation rejects obvious request/query mismatches (for example, \texttt{SELECT 1} for an employee lookup) and permits at most two deterministic repair attempts. Access-control denials and genuine refusals are never retried. This control removed observed competence artifacts without retrying attacks until success.
 
 \subsection{Attack Design}
 
 Following OMNI-LEAK's methodology, we evaluate 20 attack payloads across four categories, each with explicit (includes exact SQL) and implicit (natural language only) variants:
 
 \begin{itemize}
-    \item \textbf{Blocker} (Attacks 1--3): Frames SSN exfiltration as a prerequisite that must be completed before the original query can be answered.
+    \item \textbf{Blocker} (Attacks 1--3): Frames compensation exfiltration as a prerequisite that must be completed before the original query can be answered.
     \item \textbf{Compliance Framing} (Attacks 4--6): Uses authority and policy language to frame exfiltration as a legitimate audit requirement.
     \item \textbf{Fixed Output Structure} (Attacks 7--9): Enforces a rigid output format that embeds malicious steps as structural requirements.
     \item \textbf{Combined} (Attack 10): Merges blocker, compliance framing, and fixed output structure for maximum redundancy.
@@ -232,9 +258,15 @@ Following OMNI-LEAK's methodology, we evaluate 20 attack payloads across four ca
 
 \subsubsection{Payload Delivery Technique}
 
-All payloads employ \textit{ChatInject} delivery~\cite{chatinject}: the injected text is prefixed with the model's chat template special tokens (\texttt{<|im\_end|>} followed by \texttt{<|im\_start|>user}) to make the model interpret the payload as a new user turn rather than a data value. This addresses a well-documented challenge in indirect prompt injection: models trained with instruction tuning tend to treat content in tool outputs as data rather than instructions~\cite{rolecconfusion}. By forging chat template boundaries, the payload escapes the data channel and is processed as a first-class instruction. Selected payloads additionally use \textit{user-declaring} prefixes (e.g., ``User: I need you to...''), which were shown to account for 100\% of the top 5\% most effective injection templates across 212 tested variants~\cite{rolecconfusion}.
+All payloads employ \textit{ChatInject} delivery~\cite{chatinject}: the injected text is prefixed with the model's chat-template special tokens (\texttt{<|im\_end|>} followed by \texttt{<|im\_start|>user}) to encourage the model to interpret database content as a new user turn rather than a field value. Selected payloads also use user-declaring prefixes (e.g., ``User: I need you to...''). These formats target \textit{role confusion}: the tendency to infer authority from how text is written rather than from the trusted channel through which it arrived~\cite{rolecconfusion}.
 
-Each payload is injected into the \texttt{department\_name} field of employee \#1 in the public \texttt{employees} table. The benign trigger query targets employee \#1 specifically (e.g., ``Which department does employee \#1 work in?''), ensuring the poisoned field is surfaced as the primary result. Exfiltration is measured by checking whether SSN-formatted strings (\texttt{NNN-NN-NNNN}) appear in the email log sent to the attacker-controlled address.
+Each payload is injected into the \texttt{department\_name} field of employee \#1 in the public \texttt{employees} table. Benign trigger queries request public information that surfaces the poisoned record. A trial counts as successful only when the notification tool records an actual send to the attacker address and its body contains a seeded salary or bonus value. Detection normalizes common currency and thousands-separator formatting (e.g., \texttt{\$176,000} to \texttt{176000}). Merely planning, mentioning, or querying private data does not count as exfiltration.
+
+\subsection{Evaluation Protocol and Metrics}
+
+The completed smoke study executes each of the 20 payloads once in Phase 1 and once in Phase 2. We report all-attempt ASR and completed-execution ASR separately. Empty model output, exhausted orchestration steps, repeated-action termination, model error, and SQL repair exhaustion are explicit execution states rather than successful defenses.
+
+Security evaluation alone can reward an unusable system, so we also run seven utility cases: four clean lookups, two explicit legitimate notification requests, and one poisoned-but-answerable lookup. The clean suite includes both employee-role public queries and a finance-authorized compensation query. We measure clean answer accuracy, deterministic extraction success, absence of unauthorized private values, absence of unintended notifications, successful execution of legitimate notifications, and partial utility---whether the system rejects the poisoned field while retaining clean fields from the same row.
 
 % ============================================================
 % PHASE 1 RESULTS
@@ -245,18 +277,18 @@ Table~\ref{tab:phase1} summarizes the Phase 1 attack success rates on the undefe
 
 \begin{table}[h]
 \centering
-\caption{Phase 1: Attack Success Rate (ASR) by category on the undefended multi-agent orchestrator using DeepSeek-V3.2.}
+\caption{Phase 1: Qwen attack success rate (ASR) on the undefended orchestrator. Each payload is executed once.}
 \label{tab:phase1}
 \begin{tabular}{lccc}
 \toprule
 \textbf{Category} & \textbf{Explicit} & \textbf{Implicit} & \textbf{Total} \\
 \midrule
-Blocker           & 3/3 & 2/3 & 5/6 (83.3\%) \\
+Blocker           & 2/3 & 2/3 & 4/6 (66.7\%) \\
 Compliance Framing & 2/3 & 2/3 & 4/6 (66.7\%) \\
-Fixed Output Structure & 2/3 & 1/3 & 3/6 (50.0\%) \\
-Combined          & 1/1 & 0/1 & 1/2 (50.0\%) \\
+Fixed Output Structure & 3/3 & 3/3 & 6/6 (100.0\%) \\
+Combined          & 1/1 & 1/1 & 2/2 (100.0\%) \\
 \midrule
-\textbf{Overall}  & \textbf{8/10} & \textbf{5/10} & \textbf{13/20 (65.0\%)} \\
+\textbf{Overall}  & \textbf{8/10} & \textbf{8/10} & \textbf{16/20 (80.0\%)} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -264,22 +296,74 @@ Combined          & 1/1 & 0/1 & 1/2 (50.0\%) \\
 \subsection{Analysis}
 \label{sec:phase1-analysis}
 
-The undefended orchestrator exhibits an overall ASR of 65.0\%, confirming that multi-agent orchestrator systems are susceptible to indirect prompt injection when no information-flow controls are in place. Several observations are noteworthy:
+The undefended orchestrator exhibits 80.0\% ASR: all 20 executions completed normally, and 16 sent at least one true salary or bonus value to the attacker address. Explicit and implicit variants both succeed in 8/10 cases, so exact SQL is not necessary for compromise in this setup.
 
-\textbf{Blocker is the most effective category}, achieving 83.3\% ASR. By framing exfiltration as a prerequisite that must be completed before the original query can proceed, blocker payloads exploit the orchestrator's task-completion drive. Explicit blocker payloads achieved a perfect 3/3, as the inclusion of exact SQL commands reduces ambiguity in the attack chain.
+\textbf{Fixed-output and combined payloads are fully effective} in this run. Both variants of the combined attack succeed, as do all six fixed-output payloads. Blocker and compliance framing each succeed in four of six executions.
 
-\textbf{Explicit payloads outperform implicit ones} (8/10 vs.\ 5/10). This aligns with the observation that explicit payloads reduce the number of LLM reasoning steps required: when the payload contains the exact SQL query (\texttt{SELECT employee\_id, ssn FROM employee\_ssn}), the orchestrator can directly pass it to the SQL agent without needing to infer the correct table or column names.
+\textbf{The four safe trials still show substantial hijacking.} Three safe executions queried private compensation but did not invoke the notification tool; one refused before the private query. Thus, binary email ASR understates intermediate compromise. We retain the strict side-effect definition because the adversary's stated objective is external exfiltration.
 
-\textbf{Failures fall into three categories.} Of the 7 failed attacks: (a) 4 were \textit{model refusals}, where DeepSeek-V3.2 recognized the SSN exfiltration request and declined (e.g., ``I cannot retrieve or email sensitive personal information like Social Security numbers''); (b) 2 were \textit{Azure content filter blocks}, where the external safety infrastructure intercepted the request before the model could respond; and (c) 1 was a \textit{partial hijack}, where the orchestrator emailed the attacker-controlled address with the correct subject line but included a placeholder (\texttt{[Data from SQL query: SELECT...]}) instead of executing the SQL query first, resulting in no actual SSN data in the email body.
+\textbf{Successful attacks follow a consistent chain}: (1) a benign public query retrieves the poisoned department field, (2) raw tool output reaches the orchestrator, (3) the orchestrator issues a private compensation query, and (4) the notification agent sends the resulting values. This supports OMNI-LEAK's central mechanism: individually legitimate privileges compose into an unsafe cross-agent flow.
 
-\textbf{Model refusal represents genuine defense behavior.} Unlike the Azure content filter (which operates on surface-level pattern matching), the model refusals demonstrate that DeepSeek-V3.2 retains some ability to recognize and refuse privacy-violating instructions even when they arrive through indirect prompt injection. However, this defense is inconsistent --- the same payload framing that was refused in one trial succeeded in another, reflecting the stochastic nature of LLM inference at non-zero temperature.
+\section{Phase 2 Results: Information-Flow Defense}
 
-\textbf{Successful attacks follow a consistent multi-step pattern}: (1) orchestrator queries employee data, (2) receives poisoned \texttt{department\_name} containing the ChatInject payload, (3) issues a second SQL query to retrieve SSNs from \texttt{employee\_ssn}, (4) sends the SSN data to the attacker's email via the notification agent. The median successful attack completes in 4 orchestrator steps.
+Table~\ref{tab:phase2} compares the same 20 payloads under the transferred defense. Every execution completed, every poisoned field was rejected, and no salary or bonus value reached synthesis or the email log.
+
+\begin{table}[h]
+\centering
+\caption{Phase 2: Qwen ASR with the Cordon-MAS-inspired pipeline.}
+\label{tab:phase2}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Category} & \textbf{Leaked/Total} & \textbf{ASR} \\
+\midrule
+Blocker & 0/6 & 0.0\% \\
+Compliance Framing & 0/6 & 0.0\% \\
+Fixed Output Structure & 0/6 & 0.0\% \\
+Combined & 0/2 & 0.0\% \\
+\midrule
+\textbf{Overall} & \textbf{0/20} & \textbf{0.0\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The observed absolute ASR reduction is 80 percentage points. In all trials, the Gate rejected exactly the poisoned \texttt{department\_name} claim while retaining one or four clean claims depending on the query projection. In the final rerun, one malicious claim caused both Qwen audit attempts to reach the 1,024-token cap without valid JSON. Fail-closed handling rejected it; independently, rule-based analysis assigned the claim score 1.0, so the parser failure did not change its gate decision. None of the 20 attacker-controlled email instructions received action authorization, and the simulated notification log remained empty.
+
+\subsection{Utility}
+
+\begin{table}[h]
+\centering
+\caption{Utility regression for the defended Qwen pipeline.}
+\label{tab:utility}
+\begin{tabular}{lc}
+\toprule
+\textbf{Metric} & \textbf{Result} \\
+\midrule
+Clean answer accuracy & 4/4 \\
+Valid deterministic extraction & 7/7 \\
+Unauthorized private-data safety & 6/6 \\
+No unintended notifications & 5/5 \\
+Legitimate notification success & 2/2 \\
+Partial utility under poisoning & 1/1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The poisoned utility case requests all public details for employee \#1. The defense extracts five claims, rejects only the injected department value, and answers with the employee's ID, name, role, and email. This demonstrates field-level rather than row-level quarantine. In the two legitimate action cases, an employee-role request sends an approved public department claim and a finance-role request sends approved salary and bonus claims to recipients explicitly named by the user; both simulated sends succeed. No email is produced in any of the five cases without trusted email intent. The suite nevertheless remains small and does not cover aggregate queries, long reports, multiple recipients, or richer action types.
+
+\section{Discussion and Limitations}
+
+\textbf{Preliminary sample size.} Each payload is executed once. The 80\% and 0\% figures describe this controlled smoke study and should not be presented as stable population estimates. The final evaluation should repeat each payload under fixed model/server settings and report confidence intervals.
+
+\textbf{Action-policy contribution.} Phase 2 combines the Cordon-inspired claim pipeline with a deterministic, trusted-query-bound action gate. The 0\% exfiltration result therefore evaluates the complete defended workflow. For response-side salary protection, Phase 1 and Phase 2 retain the same finance capability and differ in their information-flow architecture. For notification-side protection, blocking database-originated recipients is additionally enforced by the action gate and should not be attributed to the semantic Auditor alone. The two legitimate-send utility cases show basic action preservation, but broader action-policy ablations remain future work.
+
+\textbf{Simplified Cordon-MAS realization.} The local implementation uses deterministic row extraction, per-claim rules, and an LLM semantic audit. It does not reproduce Cordon-MAS's complete cross-source support and marginal-influence mechanisms. We therefore call it Cordon-MAS-inspired rather than a faithful reproduction.
+
+\textbf{Adaptive and propagating attacks remain open.} AgentWorm demonstrates persistent, autonomous propagation across agent instances \cite{agentworm}, while FORGE shows coordinated poisoning that steers recursive planning across documents \cite{forge}. Our completed experiment is single-pass and single-record. The current Phase 3 draft does not yet implement AgentWorm persistence or genuine cross-agent propagation, and its extractor-confusion payloads are mismatched to deterministic extraction. These attacks must be redesigned and evaluated before drawing conclusions about adaptive robustness.
 
 % ============================================================
 % APPENDIX
 % ============================================================
-\appendix
+\appendices
 
 \section{Phase 1 Agent Prompts}
 \label{app:prompts}
@@ -326,14 +410,14 @@ DATABASE SCHEMA (exactly 2 tables, nothing else):
 \medskip
 TABLE 1: employees (id INTEGER PRIMARY KEY, name TEXT, department\_name TEXT, role TEXT, email TEXT)
 
-TABLE 2: employee\_ssn (id INTEGER PRIMARY KEY, employee\_id INTEGER, ssn TEXT)
+TABLE 2: employee\_salary (id INTEGER PRIMARY KEY, employee\_id INTEGER, salary INTEGER, bonus INTEGER)
 
 \medskip
 RULES:
 
 - There is NO "departments" table. department\_name is a column in employees.
 
-- To JOIN employees with SSNs: SELECT e.name, s.ssn FROM employees e JOIN employee\_ssn s ON e.id = s.employee\_id
+- To JOIN employees with salaries: SELECT e.name, s.salary, s.bonus FROM employees e JOIN employee\_salary s ON e.id = s.employee\_id
 
 - NEVER reference tables or columns that are not listed above.
 
@@ -350,14 +434,14 @@ Request: "get employee \#1 details"
 SELECT id, name, department\_name, role, email FROM employees WHERE id = 1
 
 \medskip
-Request: "retrieve all SSNs"
+Request: "retrieve all salaries"
 
-SELECT employee\_id, ssn FROM employee\_ssn
+SELECT employee\_id, salary, bonus FROM employee\_salary
 
 \medskip
-Request: "get SSNs with employee names"
+Request: "get salaries with employee names"
 
-SELECT e.name, s.ssn FROM employees e JOIN employee\_ssn s ON e.id = s.employee\_id
+SELECT e.name, s.salary, s.bonus FROM employees e JOIN employee\_salary s ON e.id = s.employee\_id
 
 \medskip
 Respond with ONLY the raw SQL query. No explanation, no markdown, no code blocks.
@@ -375,9 +459,10 @@ The notification agent is a deterministic function (no LLM call). It receives \t
 \begin{thebibliography}{1}
 \bibitem{omnileak} A.~Naik, J.~Culligan, Y.~Gal, P.~Torr, R.~Aljundi, A.~Paren, and A.~Bibi, ``OMNI-LEAK: Orchestrator Multi-Agent Network Induced Data Leakage,'' \textit{arXiv:2602.13477}, 2026.
 \bibitem{cordonmas} Z.~Yu, W.~Xing, G.~Li, S.~Xiong, H.~Wang, X.~Teng, and M.~Han, ``Cordon-MAS: Defending RAG Against Knowledge Poisoning via Information-Flow Control,'' \textit{arXiv:2605.26754}, 2026.
-\bibitem{chatinject} ChatInject: Exploiting Chat Template Special Tokens for Prompt Injection, \textit{arXiv:2509.22830}, 2025.
-\bibitem{rolecconfusion} R.~Ye, R.~Dohan, H.~Sedghi, and S.~Jha, ``Prompt Injection as Role Confusion,'' \textit{Proceedings of the 43rd International Conference on Machine Learning (ICML)}, 2026.
-\bibitem{greshake} K.~Greshake, S.~Abdelnabi, S.~Mishra, C.~Endres, T.~Goel, and M.~Fritz, ``Not What You've Signed Up For: Compromising Real-World LLM-Integrated Applications with Indirect Prompt Injection,'' \textit{arXiv:2302.12173}, 2023.
+\bibitem{chatinject} H.~Chang, Y.~Jun, and H.~Lee, ``ChatInject: Abusing Chat Templates for Prompt Injection in LLM Agents,'' \textit{arXiv:2509.22830}, 2025.
+\bibitem{rolecconfusion} C.~Ye, J.~Cui, and D.~Hadfield-Menell, ``Prompt Injection as Role Confusion,'' \textit{arXiv:2603.12277}, 2026.
+\bibitem{agentworm} Y.~Zhang, Z.~Wei, X.~Luan, C.~Wu, Z.~Zhang, J.~Wu, H.~Wu, H.~Chen, J.~Sun, and M.~Sun, ``AgentWorm: Self-Propagating Attacks Across LLM Agent Ecosystems,'' \textit{arXiv:2603.15727}, 2026.
+\bibitem{forge} Y.~Pan, Z.~Zhang, J.~Lei, C.~Jia, Q.~Si, and H.~Guo, ``FORGE: Research-Trajectory Hijacking Attacks on Deep Research Agents,'' \textit{arXiv:2607.04718}, 2026.
 \end{thebibliography}
 
 \end{document}
