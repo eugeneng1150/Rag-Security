@@ -350,6 +350,51 @@ Partial utility under poisoning & 1/1 \\
 
 The poisoned utility case requests all public details for employee \#1. The defense extracts five claims, rejects only the injected department value, and answers with the employee's ID, name, role, and email. This demonstrates field-level rather than row-level quarantine. In the two legitimate action cases, an employee-role request sends an approved public department claim and a finance-role request sends approved salary and bonus claims to recipients explicitly named by the user; both simulated sends succeed. No email is produced in any of the five cases without trusted email intent. The suite nevertheless remains small and does not cover aggregate queries, long reports, multiple recipients, or richer action types.
 
+\subsection{Consolidated Results}
+
+Table~\ref{tab:overall-results} separates the Phase 0 authorization control from the causal Phase 1--2 comparison. Phase 0 uses a restricted employee role and confirms that ordinary database authorization prevents direct compensation access. Phases 1 and 2 both retain the finance role; consequently, their 80-percentage-point ASR difference reflects the change from the undefended orchestrator to the Cordon-inspired information-flow and gated-action architecture, rather than removal of salary-read capability.
+
+\begin{table}[h]
+\centering
+\caption{Consolidated security results. ``Leaked'' requires a simulated email containing a true seeded salary or bonus value.}
+\label{tab:overall-results}
+\begin{tabular}{llcc}
+\toprule
+\textbf{Condition} & \textbf{Role} & \textbf{Leaked} & \textbf{Rate} \\
+\midrule
+Phase 0: ACL control & Employee & 0/20 & 0.0\% \\
+Phase 1: Undefended & Finance & 16/20 & 80.0\% \\
+Phase 2: Defended & Finance & 0/20 & 0.0\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The combined security--utility result has three principal takeaways. First, the attack is operational in the privileged baseline: 16 of 20 completed Phase 1 executions exfiltrate true compensation data. Second, the transferred defense blocks all 20 matched Phase 2 payloads while preserving the same finance authorization. Third, the result is not achieved by disabling useful actions: all four clean answer tasks and both explicitly authorized notification tasks succeed, while no notification occurs in any of the five cases lacking trusted email intent. These are controlled smoke-study results with one execution per payload, not population-level robustness estimates.
+
+\subsection{Stage-Wise Attack Penetration}
+
+Final ASR alone hides partial compromise. We therefore reconstruct a penetration funnel from the saved agent and tool traces, reported in Table~\ref{tab:penetration}. A stage is counted only from an observable event: poison retrieval from SQL output, creation and rejection of its claim card, execution of a query over \texttt{employee\_salary}, an actual notification-agent send to the attacker address, or detection of a seeded compensation value in that send. ``Reached'' and ``compromised'' are distinct: in Phase 2 the poisoned value reaches the Extractor and Auditor by design, but does not cross the Claim Gate.
+
+\begin{table}[h]
+\centering
+\caption{Stage-wise penetration reconstructed from execution traces.}
+\label{tab:penetration}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Observed stage} & \textbf{Phase 1} & \textbf{Phase 2} \\
+\midrule
+Poison retrieved & 20/20 & 20/20 \\
+Poison extracted as claim & N/A & 20/20 \\
+Poison flagged and rejected & N/A & 20/20 \\
+Private salary query executed & 19/20 & 0/20 \\
+Attacker notification executed & 16/20 & 0/20 \\
+Compensation exfiltrated & 16/20 & 0/20 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The undefended attack therefore penetrates beyond final exfiltration in three additional trials: 19 of 20 executions reach the private compensation table, while 16 continue through the notification channel. In Phase 2, all 20 poisoned values are exposed to the defensive processing stages and all 20 are contained at the Auditor--Gate boundary; none influence synthesis, receive action authorization, or trigger a notification. One trial reaches this same safe decision through fail-closed handling after invalid Qwen auditor output, demonstrating why model-formatting failure must be reported separately from attack success.
+
 \section{Discussion and Limitations}
 
 \textbf{Preliminary sample size.} Each payload is executed once. The 80\% and 0\% figures describe this controlled smoke study and should not be presented as stable population estimates. The final evaluation should repeat each payload under fixed model/server settings and report confidence intervals.
@@ -358,7 +403,13 @@ The poisoned utility case requests all public details for employee \#1. The defe
 
 \textbf{Simplified Cordon-MAS realization.} The local implementation uses deterministic row extraction, per-claim rules, and an LLM semantic audit. It does not reproduce Cordon-MAS's complete cross-source support and marginal-influence mechanisms. We therefore call it Cordon-MAS-inspired rather than a faithful reproduction.
 
-\textbf{Adaptive and propagating attacks remain open.} AgentWorm demonstrates persistent, autonomous propagation across agent instances \cite{agentworm}, while FORGE shows coordinated poisoning that steers recursive planning across documents \cite{forge}. Our completed experiment is single-pass and single-record. The current Phase 3 draft does not yet implement AgentWorm persistence or genuine cross-agent propagation, and its extractor-confusion payloads are mismatched to deterministic extraction. These attacks must be redesigned and evaluated before drawing conclusions about adaptive robustness.
+\textbf{Adaptive and propagating attacks remain open.} AgentWorm demonstrates persistent, autonomous propagation across agent instances \cite{agentworm}; Morris-II shows that self-replicating prompts can propagate through RAG-backed communication between GenAI applications \cite{morrisii}; and FORGE shows coordinated poisoning that steers recursive planning across documents \cite{forge}. Planned Phase 3 narrows this broad space to a controlled, single-pass provenance-laundering experiment: the output of one defended orchestrator is delivered as a peer handoff to another, testing whether database-originated intent can be mistaken for fresh trusted authority at the next hop. This is an AgentWorm/Morris-II-inspired propagation test, not a reproduction of persistent malware. Target-adaptive payload generation, motivated by adaptive AI worms \cite{adaptiveworm}, is reserved as an optional extension after fixed-carrier propagation is established.
+
+\section{Conclusion}
+
+This study evaluates whether a Cordon-MAS-inspired information-flow architecture can transfer from poisoned RAG to a privileged, tool-using orchestrator. Phase 0 confirms the expected boundary of ordinary role-based access control, but the main comparison deliberately retains finance authorization in both attack conditions. Under that shared capability, the undefended Phase 1 system exfiltrates true salary or bonus values in 16 of 20 executions, whereas the Phase 2 defended workflow exfiltrates none. Trace reconstruction localizes the difference: the baseline reaches the private compensation table in 19 trials, while the defense extracts, flags, and rejects the poisoned field in all 20 trials before it reaches synthesis or action authority.
+
+The reduction is not obtained by disabling all useful behavior. The defended workflow completes all four clean answer tasks, both explicitly authorized notification tasks, and a poisoned-but-partially-answerable task without producing unintended notifications. These findings support the transferability of structured extraction, claim-level auditing, information-flow gating, and trusted-query-bound action authorization in this controlled setting. They remain preliminary because each fixed payload is executed once and the simplified implementation does not test adaptive cross-agent re-entry. Planned Phase 3 will evaluate whether a defended agent's output can launder database-originated intent into trusted authority when consumed as a peer handoff by another agent.
 
 % ============================================================
 % APPENDIX
@@ -462,7 +513,9 @@ The notification agent is a deterministic function (no LLM call). It receives \t
 \bibitem{chatinject} H.~Chang, Y.~Jun, and H.~Lee, ``ChatInject: Abusing Chat Templates for Prompt Injection in LLM Agents,'' \textit{arXiv:2509.22830}, 2025.
 \bibitem{rolecconfusion} C.~Ye, J.~Cui, and D.~Hadfield-Menell, ``Prompt Injection as Role Confusion,'' \textit{arXiv:2603.12277}, 2026.
 \bibitem{agentworm} Y.~Zhang, Z.~Wei, X.~Luan, C.~Wu, Z.~Zhang, J.~Wu, H.~Wu, H.~Chen, J.~Sun, and M.~Sun, ``AgentWorm: Self-Propagating Attacks Across LLM Agent Ecosystems,'' \textit{arXiv:2603.15727}, 2026.
+\bibitem{morrisii} S.~Cohen, R.~Bitton, and B.~Nassi, ``Here Comes The AI Worm: Unleashing Zero-click Worms that Target GenAI-Powered Applications,'' \textit{arXiv:2403.02817}, 2024.
 \bibitem{forge} Y.~Pan, Z.~Zhang, J.~Lei, C.~Jia, Q.~Si, and H.~Guo, ``FORGE: Research-Trajectory Hijacking Attacks on Deep Research Agents,'' \textit{arXiv:2607.04718}, 2026.
+\bibitem{adaptiveworm} J.~Guan, T.~Blanchard, H.~Foerster, H.~Jia, G.~Huang, and N.~Papernot, ``AI Agents Enable Adaptive Computer Worms,'' \textit{arXiv:2606.03811}, 2026.
 \end{thebibliography}
 
 \end{document}
