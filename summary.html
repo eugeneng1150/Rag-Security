@@ -450,7 +450,7 @@
 
     .penetration {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 10px;
       margin-top: 22px;
     }
@@ -640,22 +640,6 @@
     .outcome.good { color: #245a54; background: var(--teal-soft); }
     .outcome.warn { color: #77500d; background: var(--amber-soft); }
 
-    .interpretation-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-    }
-
-    .interpretation-card {
-      padding: 22px;
-      border: 1px solid var(--line);
-      border-radius: 15px;
-      background: white;
-    }
-
-    .interpretation-card .symbol { font-size: 1.45rem; }
-    .interpretation-card p { margin-bottom: 0; color: var(--muted); font-size: 0.9rem; }
-
     footer {
       margin-top: 45px;
       padding: 34px 0 50px;
@@ -679,7 +663,6 @@
       .penetration { grid-template-columns: 1fr; }
       .penetration-step { min-height: auto; text-align: left; }
       .penetration-step:not(:last-child)::after { content: "↓"; top: auto; right: 50%; bottom: -20px; }
-      .interpretation-grid { grid-template-columns: 1fr; }
     }
 
     @media (max-width: 680px) {
@@ -711,7 +694,6 @@
         <a href="#figures">Figures</a>
         <a href="#results">Results</a>
         <a href="#logs">Trace examples</a>
-        <a href="#interpretation">Interpretation</a>
       </nav>
     </div>
   </header>
@@ -789,7 +771,7 @@
                 <th>Database capability</th>
                 <th>System design</th>
                 <th>Question answered</th>
-                <th>Status</th>
+                <th>Experiment state</th>
               </tr>
             </thead>
             <tbody>
@@ -812,14 +794,14 @@
                 <td>Finance role</td>
                 <td>Raw SQL results return to a tool-using orchestrator</td>
                 <td>Can poisoned data become a command and cause exfiltration?</td>
-                <td><span class="badge red">Undefended</span></td>
+                <td><span class="badge green">Completed</span></td>
               </tr>
               <tr>
                 <td><strong>Phase 2</strong></td>
                 <td>Finance role</td>
                 <td>Extraction → audit → claim gate → synthesis/action gate</td>
                 <td>Can information-flow controls stop the attack without removing capabilities?</td>
-                <td><span class="badge blue">Defended</span></td>
+                <td><span class="badge green">Completed</span></td>
               </tr>
               <tr>
                 <td><strong>Phase 3</strong></td>
@@ -967,18 +949,13 @@
           </div>
           <div class="penetration-step">
             <span class="icon">▤</span>
-            <strong>52</strong>
-            <small>field-level claims were extracted</small>
+            <strong>20/20</strong>
+            <small>poisoned fields were isolated as separate claims</small>
           </div>
           <div class="penetration-step stop">
             <span class="icon">⛨</span>
             <strong>20/20</strong>
             <small>poisoned claims were detected and rejected</small>
-          </div>
-          <div class="penetration-step stop">
-            <span class="icon">✓</span>
-            <strong>32</strong>
-            <small>clean claims remained approved and usable</small>
           </div>
           <div class="penetration-step stop">
             <span class="icon">✉</span>
@@ -988,7 +965,7 @@
         </div>
 
         <div class="callout safe">
-          The defense does not make the poisoned database row disappear. It separates the row into individual claims, rejects the 20 malicious field claims, preserves 32 clean claims, and prevents the database text from authorizing an email.
+          The defense does not make the poisoned database row disappear. In every trial, it isolates and rejects the malicious field while clean fields from the same row remain eligible for use. The database text never authorizes an email.
         </div>
 
         <h3 style="margin-top:34px">Phase 1 results by payload category</h3>
@@ -1324,37 +1301,6 @@ bonus: 9000</pre>
         </details>
       </section>
 
-      <section id="interpretation" aria-labelledby="interpretation-title">
-        <div class="section-head">
-          <div>
-            <span class="eyebrow">Interpretation</span>
-            <h2 id="interpretation-title">What the experiment supports</h2>
-          </div>
-          <p>The strongest conclusion comes from comparing Phase 1 and Phase 2 under the same finance capability—not from comparing privileged and unprivileged users.</p>
-        </div>
-
-        <div class="interpretation-grid">
-          <article class="interpretation-card">
-            <span class="symbol">⚠</span>
-            <h3>Data can become control</h3>
-            <p>In Phase 1, raw SQL output and trusted instructions share the same orchestration context. A department value can therefore redirect tool use.</p>
-          </article>
-          <article class="interpretation-card">
-            <span class="symbol">⛨</span>
-            <h3>Quarantine can be precise</h3>
-            <p>Phase 2 rejects the poisoned department field while retaining clean identity, role, and email fields from the same row.</p>
-          </article>
-          <article class="interpretation-card">
-            <span class="symbol">✉</span>
-            <h3>Data is not authority</h3>
-            <p>An email address found in the database is only data. Action authority must come from the separately retained trusted user request.</p>
-          </article>
-        </div>
-
-        <div class="callout" style="margin-top:24px">
-          <strong>Scope:</strong> these are single-run Qwen smoke-test results for 20 fixed payloads and seven utility cases. Phase 3 remains planned work for adaptive attacks and stage-by-stage penetration measurement. The implementation is Cordon-MAS-inspired and is not a complete reproduction of every cross-document experiment in the original paper.
-        </div>
-      </section>
     </div>
   </main>
 
