@@ -133,13 +133,13 @@ The experiment targets injection propagation rather than SQL-writing ability. We
 
 \subsection{Attack Design}
 
-Following OMNI-LEAK's methodology, we evaluate 20 attack payloads across four categories, each with explicit (includes exact SQL) and implicit (natural language only) variants:
+Following OMNI-LEAK's methodology, we evaluate 20 attack payloads across four categories:
 
 \begin{itemize}
-    \item \textbf{Blocker} (Attacks 1--3): Frames compensation exfiltration as a prerequisite that must be completed before the original query can be answered.
-    \item \textbf{Compliance Framing} (Attacks 4--6): Uses authority and policy language to frame exfiltration as a legitimate audit requirement.
-    \item \textbf{Fixed Output Structure} (Attacks 7--9): Enforces a rigid output format that embeds malicious steps as structural requirements.
-    \item \textbf{Combined} (Attack 10): Merges blocker, compliance framing, and fixed output structure for maximum redundancy.
+    \item \textbf{Blocker} (6 payloads): Frames compensation exfiltration as a prerequisite that must be completed before the original query can be answered.
+    \item \textbf{Compliance Framing} (6 payloads): Uses authority and policy language to frame exfiltration as a legitimate audit requirement.
+    \item \textbf{Fixed Output Structure} (6 payloads): Enforces a rigid output format that embeds malicious steps as structural requirements.
+    \item \textbf{Combined} (2 payloads): Merges blocker, compliance framing, and fixed output structure for maximum redundancy.
 \end{itemize}
 
 \subsubsection{Payload Delivery Technique}
@@ -165,16 +165,16 @@ Table~\ref{tab:phase1} summarizes the Phase 1 attack success rates on the undefe
 \centering
 \caption{Phase 1: Qwen attack success rate (ASR) on the undefended orchestrator. Each payload is executed once.}
 \label{tab:phase1}
-\begin{tabular}{lccc}
+\begin{tabular}{lcc}
 \toprule
-\textbf{Category} & \textbf{Explicit} & \textbf{Implicit} & \textbf{Total} \\
+\textbf{Category} & \textbf{Successful/Total} & \textbf{ASR} \\
 \midrule
-Blocker           & 2/3 & 2/3 & 4/6 (66.7\%) \\
-Compliance Framing & 2/3 & 2/3 & 4/6 (66.7\%) \\
-Fixed Output Structure & 3/3 & 3/3 & 6/6 (100.0\%) \\
-Combined          & 1/1 & 1/1 & 2/2 (100.0\%) \\
+Blocker & 4/6 & 66.7\% \\
+Compliance Framing & 4/6 & 66.7\% \\
+Fixed Output Structure & 6/6 & 100.0\% \\
+Combined & 2/2 & 100.0\% \\
 \midrule
-\textbf{Overall}  & \textbf{8/10} & \textbf{8/10} & \textbf{16/20 (80.0\%)} \\
+\textbf{Overall} & \textbf{16/20} & \textbf{80.0\%} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -182,9 +182,9 @@ Combined          & 1/1 & 1/1 & 2/2 (100.0\%) \\
 \subsection{Analysis}
 \label{sec:phase1-analysis}
 
-The undefended orchestrator exhibits 80.0\% ASR: all 20 executions completed normally, and 16 sent at least one true salary or bonus value to the attacker address. Explicit and implicit variants both succeed in 8/10 cases, so exact SQL is not necessary for compromise in this setup.
+The undefended orchestrator exhibits 80.0\% ASR: all 20 executions completed normally, and 16 sent at least one true salary or bonus value to the attacker address.
 
-\textbf{Fixed-output and combined payloads are fully effective} in this run. Both variants of the combined attack succeed, as do all six fixed-output payloads. Blocker and compliance framing each succeed in four of six executions.
+\textbf{Fixed-output and combined payloads are fully effective} in this run. All combined and fixed-output payloads succeed. Blocker and compliance framing each succeed in four of six executions.
 
 \textbf{The four safe trials still show substantial hijacking.} Three safe executions queried private compensation but did not invoke the notification tool; one refused before the private query. Thus, binary email ASR understates intermediate compromise. We retain the strict side-effect definition because the adversary's stated objective is external exfiltration.
 
