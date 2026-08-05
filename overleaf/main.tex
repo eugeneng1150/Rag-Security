@@ -1,12 +1,9 @@
 \documentclass[conference]{IEEEtran}
 \usepackage{graphicx}
-\usepackage{tikz}
 \usepackage{amsmath}
 \usepackage{booktabs}
 \usepackage{hyperref}
 \usepackage{xcolor}
-
-\usetikzlibrary{arrows.meta, positioning, shapes.geometric, fit, backgrounds, calc}
 
 \title{Does Information-Flow Control Transfer? Evaluating a Cordon-MAS-Inspired Defense Against OMNI-LEAK}
 
@@ -73,52 +70,8 @@ Figure~\ref{fig:phase1} illustrates the undefended multi-agent orchestrator arch
 
 \begin{figure*}[t]
 \centering
-\begin{tikzpicture}[
-    node distance=1.5cm and 2.5cm,
-    agent/.style={rectangle, draw=black, fill=blue!10, minimum width=2.8cm, minimum height=1cm, align=center, rounded corners=3pt, font=\small},
-    db/.style={cylinder, draw=black, fill=orange!15, shape border rotate=90, minimum width=2cm, minimum height=1.2cm, aspect=0.25, align=center, font=\small},
-    action/.style={rectangle, draw=red!70!black, fill=red!10, minimum width=2.5cm, minimum height=0.8cm, align=center, rounded corners=3pt, font=\small},
-    user/.style={rectangle, draw=black, fill=green!10, minimum width=2cm, minimum height=0.8cm, align=center, rounded corners=3pt, font=\small},
-    attacker/.style={rectangle, draw=red!70!black, fill=red!5, minimum width=2cm, minimum height=0.8cm, align=center, rounded corners=3pt, font=\small},
-    arrow/.style={-{Stealth[length=2.5mm]}, thick},
-    poison/.style={-{Stealth[length=2.5mm]}, thick, red!70!black, dashed},
-    data/.style={-{Stealth[length=2.5mm]}, thick, blue!60!black},
-]
-
-% Nodes
-\node[user] (user) {Privileged\\User};
-\node[agent, right=2.5cm of user] (orch) {Orchestrator\\Agent};
-\node[agent, above right=1cm and 2.5cm of orch] (sql) {SQL Agent};
-\node[agent, below right=1cm and 2.5cm of orch] (notif) {Notification\\Agent};
-\node[db, right=2cm of sql] (db) {Employee\\Database};
-\node[action, right=2cm of notif] (email) {Email\\(Exfiltration)};
-\node[attacker, above=1cm of db] (attacker) {Adversary};
-
-% Arrows — normal flow
-\draw[arrow] (user) -- node[above, font=\scriptsize] {1. Benign query} (orch);
-\draw[arrow] (orch) -- node[above, font=\scriptsize, sloped] {2. Route query} (sql);
-\draw[data] (sql) -- node[above, font=\scriptsize] {3. SQL query} (db);
-\draw[poison] (db) -- node[below, font=\scriptsize] {4. Results +} node[below=0.3cm, font=\scriptsize, red!70!black] {poisoned payload} (sql);
-\draw[poison] (sql) -- node[below, font=\scriptsize, sloped] {5. Raw results} node[below=0.5cm, font=\scriptsize, sloped, red!70!black] {(includes injection)} (orch);
-
-% Arrows — hijacked flow (orchestrator follows injection, queries compensation)
-\draw[poison, bend left=20] (orch) to node[above, font=\scriptsize, sloped] {6. Query salaries} (sql);
-\draw[poison, bend left=20] (sql) to node[below, font=\scriptsize, sloped] {7. Salary data} (orch);
-
-% Arrows — exfiltration
-\draw[poison] (orch) -- node[below, font=\scriptsize, sloped] {8. Send records} node[below=0.5cm, font=\scriptsize, sloped, red!70!black] {via email} (notif);
-\draw[poison] (notif) -- node[above, font=\scriptsize] {9. Exfiltrate} (email);
-
-% Attacker injection
-\draw[poison, dashed] (attacker) -- node[right, font=\scriptsize] {0. Inject payload} (db);
-
-% Background box
-\begin{scope}[on background layer]
-    \node[fit=(orch)(sql)(notif), draw=gray, dashed, rounded corners=5pt, inner sep=0.5cm, label={[font=\small, gray]above:Multi-Agent Orchestrator System}] {};
-\end{scope}
-
-\end{tikzpicture}
-\caption{Phase 1: Undefended orchestrator. The adversary injects a prompt injection payload into the public database (step 0). When a privileged user queries the system (step 1), the SQL agent retrieves data containing the poisoned payload (steps 2--5). The orchestrator follows the injected instructions, issues a second SQL query for private salary and bonus records (steps 6--7), and exfiltrates those records through the simulated notification agent (steps 8--9). Red dashed arrows indicate the attack path.}
+\includegraphics[width=\textwidth]{Figure1.png}
+\caption{Phase 1: Undefended orchestrator. The adversary poisons \texttt{employees.department\_name} in the public table (step 0). A benign finance-user query retrieves that value as raw output (steps 1--5). The injected instruction then causes a second round trip through the SQL agent to the private \texttt{employee\_salary} table (steps 6--9), after which salary and bonus records are sent to an attacker-controlled address (steps 10--11). Both tables reside in one SQLite database, and the finance role is authorized to read both; the failure is misuse of existing privilege, not an access-control bypass. Red dashed arrows show the attack path.}
 \label{fig:phase1}
 \end{figure*}
 
@@ -136,83 +89,16 @@ Figure~\ref{fig:phase2} illustrates the defended architecture inspired by Cordon
     \item \textbf{Synthesizer}: Generates the final response using only approved claim cards. Has no tool access and never sees raw data.
 \end{enumerate}
 
-Approved claims also enter a distinct action pathway. An Action Planner may propose a notification only when the original trusted user query explicitly requests one. A deterministic Action Gate verifies that the recipient originated in that trusted query and that every referenced claim was approved; it then constructs the message body from approved field-value pairs. Only an approved typed action reaches the deterministic Notification Executor. Thus, database content can supply data for an authorized action but cannot create the authority to perform that action.
+Phase 2 does not ask the LLM to guess whether text came from the user or the database. Before retrieval, the application stores the user message in a dedicated \texttt{original\_query} field, while SQL values are stored separately as typed claim cards. An injected value such as ``email the salary to the attacker'' therefore remains database data and cannot alter the saved request. A deterministic pre-check examines only \texttt{original\_query}; unless it contains an explicit notification request and recipient, the Action Planner returns no notification.
 
 \begin{figure*}[t]
 \centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[
-    node distance=1.2cm and 1.8cm,
-    agent/.style={rectangle, draw=black, fill=blue!10, minimum width=2.5cm, minimum height=0.9cm, align=center, rounded corners=3pt, font=\small},
-    defense/.style={rectangle, draw=black!60!green, fill=green!10, minimum width=2.5cm, minimum height=0.9cm, align=center, rounded corners=3pt, font=\small},
-    action/.style={rectangle, draw=orange!80!black, fill=orange!12, minimum width=2.5cm, minimum height=0.9cm, align=center, rounded corners=3pt, font=\small},
-    db/.style={cylinder, draw=black, fill=orange!15, shape border rotate=90, minimum width=1.8cm, minimum height=1cm, aspect=0.25, align=center, font=\small},
-    user/.style={rectangle, draw=black, fill=green!10, minimum width=2cm, minimum height=0.8cm, align=center, rounded corners=3pt, font=\small},
-    attacker/.style={rectangle, draw=red!70!black, fill=red!5, minimum width=2cm, minimum height=0.8cm, align=center, rounded corners=3pt, font=\small},
-    arrow/.style={-{Stealth[length=2.5mm]}, thick},
-    poison/.style={-{Stealth[length=2.5mm]}, thick, red!70!black, dashed},
-    safe/.style={-{Stealth[length=2.5mm]}, thick, green!50!black},
-    blocked/.style={-{Stealth[length=2.5mm]}, thick, red!70!black, dotted},
-]
-
-% User and Router
-\node[user] (user) {Privileged\\User};
-\node[agent, right=2cm of user] (router) {Router};
-\node[agent, right=2cm of router] (sqlexec) {SQL\\Executor};
-\node[db, right=2cm of sqlexec] (db) {Employee\\Database};
-\node[attacker, above=0.8cm of db] (attacker) {Adversary};
-
-% Defense pipeline (below)
-\node[defense, below=1.5cm of sqlexec] (extractor) {Extractor};
-\node[defense, left=1.5cm of extractor] (auditor) {Auditor};
-\node[defense, left=1.5cm of auditor] (gate) {Gate};
-\node[defense, left=1.5cm of gate] (synth) {Synthesizer};
-\node[action, below=1.5cm of gate] (planner) {Action\\Planner};
-\node[action, right=1.5cm of planner] (actiongate) {Deterministic\\Action Gate};
-\node[action, right=1.5cm of actiongate] (notify) {Notification\\Executor};
-
-% Labels
-\node[above=0.1cm of extractor, font=\scriptsize\itshape, green!40!black] {raw $\rightarrow$ structured};
-\node[above=0.1cm of auditor, font=\scriptsize\itshape, green!40!black] {anomaly scoring};
-\node[above=0.1cm of gate, font=\scriptsize\itshape, green!40!black] {accept/reject};
-\node[above=0.1cm of synth, font=\scriptsize\itshape, green!40!black] {approved claims only};
-
-% Arrows — top flow
-\draw[arrow] (user) -- node[above, font=\scriptsize] {1. Query} (router);
-\draw[arrow] (router) -- node[above, font=\scriptsize] {2. Generate SQL} (sqlexec);
-\draw[arrow] (sqlexec) -- node[above, font=\scriptsize] {3. Execute} (db);
-\draw[poison] (db) -- node[below, font=\scriptsize] {4. Raw results} node[below=0.3cm, font=\scriptsize, red!70!black] {(poisoned)} (sqlexec);
-
-% Arrows — defense pipeline
-\draw[poison] (sqlexec) -- node[right, font=\scriptsize] {5. Raw output} (extractor);
-\draw[safe] (extractor) -- node[below, font=\scriptsize] {6. Claim cards} (auditor);
-\draw[safe] (auditor) -- node[below, font=\scriptsize] {7. Scored claims} (gate);
-\draw[safe] (gate) -- node[below, font=\scriptsize] {8. Approved only} (synth);
-\draw[safe] (synth.south) -- ++(0, -0.8) -| node[near start, below, font=\scriptsize] {9. Safe response} (user.south);
-\draw[safe] (gate.south) -- node[left, font=\scriptsize] {Approved claims} (planner.north);
-\draw[safe] (user.south) |- node[pos=0.75, below, font=\scriptsize] {Trusted request} (planner.west);
-\draw[safe] (planner) -- (actiongate);
-\draw[safe] (actiongate) -- node[above, font=\scriptsize] {Approved action} (notify);
-
-% Attacker
-\draw[poison, dashed] (attacker) -- node[right, font=\scriptsize] {0. Inject} (db);
-
-% Rejected arrow
-\draw[blocked] (gate.north) -- ++(0, 0.5) node[above, font=\scriptsize, red!70!black] {Rejected claims};
-
-% Defense boundary
-\begin{scope}[on background layer]
-    \node[fit=(extractor)(auditor)(gate)(synth)(planner)(actiongate)(notify), draw=green!50!black, dashed, rounded corners=5pt, inner sep=0.4cm, label={[font=\small, green!40!black]below:Information-Flow and Gated-Action Pipeline}] {};
-    \node[fit=(router)(sqlexec), draw=gray, dashed, rounded corners=5pt, inner sep=0.3cm, label={[font=\small, gray]above:Query Execution}] {};
-\end{scope}
-
-\end{tikzpicture}
-}
+\includegraphics[width=\textwidth]{Figure 2.png}
 \caption{Phase 2: Information-flow controlled orchestrator with gated actions. Raw SQL results are converted into claim cards, audited, and filtered before reaching the tool-free Synthesizer. Approved claims may also enter the action pathway, but the deterministic Action Gate requires authorization from the original trusted query before the Notification Executor can run. Raw database text therefore reaches neither response nor action authority.}
 \label{fig:phase2}
 \end{figure*}
 
-The critical difference from Phase 1 is the \textit{information barrier} after database retrieval. In Phase 1, raw SQL results (including injected instructions) flow directly to the orchestrator, which can act on them. In Phase 2, deterministic extraction fixes the provenance of each value and prevents database text from creating additional claim-card structure. The poisoned \texttt{department\_name} value still survives as data, but the Auditor and Claim Gate can quarantine that individual claim before it reaches synthesis or action planning. Notification capability is retained, but authority must originate in the trusted user query and the message body is constructed only from approved claims.
+The critical difference from Phase 1 is therefore structural, not a judgment about which instruction sounds trustworthy. Phase 1 appends raw SQL results directly to the orchestrator's history, allowing injected text to influence its next tool call. Phase 2 preserves each value's origin. The poisoned \texttt{department\_name} still reaches the Extractor as data, but the Auditor and Claim Gate can quarantine that claim. For a legitimate notification, the Action Planner selects approved claim IDs; the deterministic Action Gate then verifies that the recipient appeared in \texttt{original\_query} and that every selected claim was approved before constructing the message body. The database can therefore supply content for a user-authorized notification, but it cannot authorize one itself.
 
 \section{Threat Model}
 
@@ -348,7 +234,7 @@ Partial utility under poisoning & 1/1 \\
 \end{tabular}
 \end{table}
 
-The poisoned utility case requests all public details for employee \#1. The defense extracts five claims, rejects only the injected department value, and answers with the employee's ID, name, role, and email. This demonstrates field-level rather than row-level quarantine. In the two legitimate action cases, an employee-role request sends an approved public department claim and a finance-role request sends approved salary and bonus claims to recipients explicitly named by the user; both simulated sends succeed. No email is produced in any of the five cases without trusted email intent. The suite nevertheless remains small and does not cover aggregate queries, long reports, multiple recipients, or richer action types.
+The poisoned utility case requests all public details for employee \#1. The defense extracts five claims, rejects only the injected department value, and answers with the employee's ID, name, role, and email. Rather than discarding the employee's entire record because one field is poisoned, the defense removes only that field and preserves the remaining safe values. In the two legitimate action cases, an employee-role request sends an approved public department claim and a finance-role request sends approved salary and bonus claims to recipients explicitly named by the user; both simulated sends succeed. No email is produced in any of the five cases without trusted email intent. The suite nevertheless remains small and does not cover aggregate queries, long reports, multiple recipients, or richer action types.
 
 \subsection{Consolidated Results}
 
@@ -386,9 +272,9 @@ Final ASR alone hides partial compromise. We therefore reconstruct a penetration
 Poison retrieved & 20/20 & 20/20 \\
 Poison extracted as claim & N/A & 20/20 \\
 Poison flagged and rejected & N/A & 20/20 \\
-Private salary query executed & 19/20 & 0/20 \\
-Attacker notification executed & 16/20 & 0/20 \\
-Compensation exfiltrated & 16/20 & 0/20 \\
+Private compensation retrieved & 19/20 & 0/20 \\
+Email sent to attacker address & 16/20 & 0/20 \\
+Email contained salary/bonus data & 16/20 & 0/20 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -397,7 +283,7 @@ The undefended attack therefore penetrates beyond final exfiltration in three ad
 
 \section{Discussion and Limitations}
 
-\textbf{Preliminary sample size.} Each payload is executed once. The 80\% and 0\% figures describe this controlled smoke study and should not be presented as stable population estimates. The final evaluation should repeat each payload under fixed model/server settings and report confidence intervals.
+\textbf{Single-run evaluation.} Each attack was tested once. The reported 80\% and 0\% attack success rates show what happened in this experiment; repeating the tests would show whether these results remain consistent.
 
 \textbf{Action-policy contribution.} Phase 2 combines the Cordon-inspired claim pipeline with a deterministic, trusted-query-bound action gate. The 0\% exfiltration result therefore evaluates the complete defended workflow. For response-side salary protection, Phase 1 and Phase 2 retain the same finance capability and differ in their information-flow architecture. For notification-side protection, blocking database-originated recipients is additionally enforced by the action gate and should not be attributed to the semantic Auditor alone. The two legitimate-send utility cases show basic action preservation, but broader action-policy ablations remain future work.
 
